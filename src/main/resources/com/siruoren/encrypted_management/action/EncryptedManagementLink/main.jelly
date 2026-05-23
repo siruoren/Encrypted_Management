@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout">
+    <l:layout title="${%Encrypted Management}">
+        <l:main-panel>
+            <h1>${%Encrypted Management}</h1>
+            <p>${%description}</p>
+        </l:main-panel>
+    </l:layout>
+</j:jelly>
