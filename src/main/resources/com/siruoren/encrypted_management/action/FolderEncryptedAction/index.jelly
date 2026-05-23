@@ -47,8 +47,10 @@
                 .em-btn-danger:hover { background-color: #a52724; }
                 .em-btn-default { background-color: #fff; }
                 .em-btn-default:hover { background-color: #f0f0f0; }
+                .em-btn-success { background-color: #2e7d32; color: white; border-color: #2e7d32; }
+                .em-btn-success:hover { background-color: #1b5e20; }
                 .em-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
-                .em-modal-content { background-color: #fff; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 600px; max-width: 90%; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+                .em-modal-content { background-color: #fff; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 700px; max-width: 90%; border-radius: 4px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); max-height: 80vh; overflow-y: auto; }
                 .em-modal-close { float: right; font-size: 24px; font-weight: bold; cursor: pointer; line-height: 1; }
                 .em-modal-close:hover { color: #999; }
                 .em-form-group { margin-bottom: 12px; }
@@ -64,6 +66,8 @@
                 .em-badge-file { background-color: #f3e5f5; color: #6a1b9a; }
                 .em-decrypt-area { background: #f5f5f5; padding: 8px; border-radius: 3px; font-family: monospace; white-space: pre-wrap; word-break: break-all; margin-top: 4px; }
                 .em-permission-error { background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; border: 1px solid #ef9a9a; margin: 8px 0; }
+                .em-key-preview { background: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace; white-space: pre-wrap; word-break: break-all; margin-top: 4px; border: 1px solid #ddd; max-height: 200px; overflow-y: auto; }
+                .em-loading { text-align: center; padding: 20px; color: #666; }
             </style>
 
             <div class="em-container">
@@ -125,6 +129,47 @@
                                 </tbody>
                             </table>
                         </div>
+
+                        <!-- Native Jenkins Credentials Section -->
+                        <j:if test="${!empty it.nativeCredentials}">
+                            <div class="em-section">
+                                <div class="em-section-header">
+                                    <h2>${%nativeCredentials}</h2>
+                                </div>
+                                <table class="em-table">
+                                    <thead>
+                                        <tr>
+                                            <th>${%variableNameLabel}</th>
+                                            <th>${%variableType}</th>
+                                            <th>${%variableDescription}</th>
+                                            <th>${%credentialId}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <j:forEach var="cred" items="${it.nativeCredentials}">
+                                            <tr>
+                                                <td>${cred.displayName}</td>
+                                                <td>
+                                                    <j:choose>
+                                                        <j:when test="${cred.type == 'USERNAME_PASSWORD'}">
+                                                            <span class="em-badge em-badge-userpass">${%usernamePassword}</span>
+                                                        </j:when>
+                                                        <j:when test="${cred.type == 'SSH_KEY_PAIR'}">
+                                                            <span class="em-badge em-badge-ssh">${%sshKeyPair}</span>
+                                                        </j:when>
+                                                        <j:otherwise>
+                                                            <span class="em-badge em-badge-secret">${%secretText}</span>
+                                                        </j:otherwise>
+                                                    </j:choose>
+                                                </td>
+                                                <td>${cred.description}</td>
+                                                <td style="font-family:monospace;font-size:11px;">${cred.id}</td>
+                                            </tr>
+                                        </j:forEach>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </j:if>
                     </j:when>
                     <j:otherwise>
                         <div class="em-permission-error">
@@ -175,12 +220,12 @@
                 </div>
             </div>
 
-            <!-- SSH Key Generation Modal -->
+            <!-- SSH Key Generation Modal (Step 1: fill params) -->
             <div class="em-modal" id="sshKeyModal">
                 <div class="em-modal-content">
                     <span class="em-modal-close" onclick="closeSshKeyModal()">&amp;times;</span>
                     <h2>${%generateSshKey}</h2>
-                    <form id="sshKeyForm" onsubmit="return submitSshKeyForm(event)">
+                    <form id="sshKeyForm" onsubmit="return submitSshKeyPreview(event)">
                         <div class="em-form-group">
                             <label>${%variableName}</label>
                             <input type="text" id="sshKeyName" name="name" required="" pattern="[a-zA-Z_][a-zA-Z0-9_-]*" maxlength="255"/>
@@ -196,6 +241,10 @@
                             </select>
                         </div>
                         <div class="em-form-group">
+                            <label>${%passphrase}</label>
+                            <input type="password" id="sshKeyPassphrase" name="passphrase" placeholder="${%passphraseOptional}"/>
+                        </div>
+                        <div class="em-form-group">
                             <label>${%keyComment}</label>
                             <input type="text" id="sshKeyComment" name="comment"/>
                         </div>
@@ -209,6 +258,21 @@
                             <button type="submit" class="em-btn em-btn-primary">${%generate}</button>
                         </div>
                     </form>
+                </div>
+            </div>
+
+            <!-- SSH Key Preview Modal (Step 2: show keys, confirm to save) -->
+            <div class="em-modal" id="sshKeyPreviewModal">
+                <div class="em-modal-content">
+                    <span class="em-modal-close" onclick="closeSshKeyPreviewModal()">&amp;times;</span>
+                    <h2>${%sshKeyPreview}</h2>
+                    <div id="sshKeyPreviewContent">
+                        <div class="em-loading">${%generatingKey}</div>
+                    </div>
+                    <div id="sshKeyPreviewActions" style="text-align:right; margin-top:16px; display:none;">
+                        <button type="button" class="em-btn em-btn-default" onclick="closeSshKeyPreviewModal()">${%cancel}</button>
+                        <button type="button" class="em-btn em-btn-success" onclick="confirmSaveSshKey()">${%createVariable}</button>
+                    </div>
                 </div>
             </div>
 
@@ -258,12 +322,14 @@
             </div>
 
             <script type="text/javascript">
+            //<![CDATA[
                 var crumbValue = '';
                 var folderUrl = '${it.folderFullName}';
+                var pendingSshKeyData = null;
 
                 (function() {
                     var xhr = new XMLHttpRequest();
-                    xhr.open('GET', 'crumbIssuer/api/json', false);
+                    xhr.open('GET', '${app.rootUrl}crumbIssuer/api/json', false);
                     try {
                         xhr.send();
                         if (xhr.status === 200) {
@@ -275,8 +341,7 @@
 
                 function escapeHtml(str) {
                     if (!str) return '';
-                    return str.replace(/&amp;/g, '&amp;').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#039;/g, "'")
-                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+                    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
                 }
 
                 function showCreateModal() {
@@ -293,12 +358,18 @@
 
                 function showSshKeyModal() {
                     document.getElementById('sshKeyName').value = '';
+                    document.getElementById('sshKeyPassphrase').value = '';
                     document.getElementById('sshKeyComment').value = '';
                     document.getElementById('sshKeyDescription').value = '';
                     document.getElementById('sshKeyNameError').style.display = 'none';
                     document.getElementById('sshKeyModal').style.display = 'block';
                 }
                 function closeSshKeyModal() { document.getElementById('sshKeyModal').style.display = 'none'; }
+
+                function closeSshKeyPreviewModal() {
+                    document.getElementById('sshKeyPreviewModal').style.display = 'none';
+                    pendingSshKeyData = null;
+                }
 
                 function showUpdateModal(name, type, description) {
                     document.getElementById('updateName').value = name;
@@ -342,7 +413,10 @@
                     return false;
                 }
 
-                function submitSshKeyForm(event) {
+                /**
+                 * SSH Key Step 1: Generate preview (does not save yet)
+                 */
+                function submitSshKeyPreview(event) {
                     event.preventDefault();
                     var name = document.getElementById('sshKeyName').value.trim();
                     var namePattern = /^[a-zA-Z_][a-zA-Z0-9_-]*$/;
@@ -353,12 +427,57 @@
                         return false;
                     }
                     nameError.style.display = 'none';
+
                     var formData = new FormData(document.getElementById('sshKeyForm'));
-                    submitAction('generateSshKey', formData, function(result) {
-                        closeSshKeyModal();
-                        location.reload();
+
+                    // Show preview modal with loading
+                    closeSshKeyModal();
+                    document.getElementById('sshKeyPreviewContent').innerHTML = '<div class="em-loading">${%generatingKey}</div>';
+                    document.getElementById('sshKeyPreviewActions').style.display = 'none';
+                    document.getElementById('sshKeyPreviewModal').style.display = 'block';
+
+                    submitAction('generateSshKeyPreview', formData, function(result) {
+                        pendingSshKeyData = result;
+                        var html = '<div class="em-form-group"><label>${%variableName}</label><div>' + escapeHtml(result.name) + '</div></div>';
+                        html += '<div class="em-form-group"><label>${%keySize}</label><div>' + escapeHtml(String(result.keySize)) + '</div></div>';
+                        if (result.passphrase) {
+                            html += '<div class="em-form-group"><label>${%passphrase}</label><div class="em-decrypt-area">' + escapeHtml(result.passphrase) + '</div></div>';
+                        }
+                        html += '<div class="em-form-group"><label>${%privateKey}</label><div class="em-key-preview">' + escapeHtml(result.privateKey) + '</div></div>';
+                        html += '<div class="em-form-group"><label>${%sshPublicKey}</label><div class="em-key-preview">' + escapeHtml(result.publicKey) + '</div></div>';
+                        if (result.description) {
+                            html += '<div class="em-form-group"><label>${%description}</label><div>' + escapeHtml(result.description) + '</div></div>';
+                        }
+                        document.getElementById('sshKeyPreviewContent').innerHTML = html;
+                        document.getElementById('sshKeyPreviewActions').style.display = 'block';
+                    }, function(error) {
+                        document.getElementById('sshKeyPreviewContent').innerHTML = '<div class="em-permission-error"><strong>${%error}</strong><p>' + escapeHtml(error) + '</p></div>';
                     });
                     return false;
+                }
+
+                /**
+                 * SSH Key Step 2: Confirm and save
+                 */
+                function confirmSaveSshKey() {
+                    if (!pendingSshKeyData) return;
+                    var data = pendingSshKeyData;
+                    var formData = new FormData();
+                    formData.append('name', data.name);
+                    formData.append('privateKey', data.privateKey);
+                    formData.append('publicKey', data.publicKey);
+                    formData.append('passphrase', data.passphrase || '');
+                    formData.append('description', data.description || '');
+                    formData.append('folderFullName', folderUrl);
+                    formData.append('keySize', String(data.keySize || 4096));
+                    formData.append('comment', data.comment || '');
+
+                    submitAction('saveSshKey', formData, function(result) {
+                        closeSshKeyPreviewModal();
+                        location.reload();
+                    }, function(error) {
+                        showNotification(error, 'error');
+                    });
                 }
 
                 function submitUpdateForm(event) {
@@ -381,10 +500,6 @@
                     });
                 }
 
-                /**
-                 * Decrypt entry - used by both sidebar buttons and table actions.
-                 * Always checks user permission via server-side validation.
-                 */
                 function decryptEntry(name) {
                     var formData = new FormData();
                     formData.append('name', name);
@@ -406,7 +521,6 @@
                         content.innerHTML = html;
                         document.getElementById('decryptModal').style.display = 'block';
                     }, function(error) {
-                        // Show permission error in modal
                         var content = document.getElementById('decryptContent');
                         content.innerHTML = '<div class="em-permission-error"><strong>${%permissionDenied}</strong><p>' + escapeHtml(error) + '</p></div>';
                         document.getElementById('decryptModal').style.display = 'block';
@@ -456,6 +570,7 @@
                     document.body.appendChild(notification);
                     setTimeout(function() { notification.remove(); }, 3000);
                 }
+            //]]>
             </script>
         </l:main-panel>
     </l:layout>

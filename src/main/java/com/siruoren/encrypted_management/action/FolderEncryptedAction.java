@@ -1,6 +1,12 @@
 package com.siruoren.encrypted_management.action;
 
 import com.cloudbees.hudson.plugins.folder.Folder;
+import com.cloudbees.plugins.credentials.Credentials;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsScope;
+import com.cloudbees.plugins.credentials.common.StandardCredentials;
+import com.cloudbees.plugins.credentials.common.UsernamePasswordCredentials;
+import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
 import hudson.Extension;
 import hudson.model.Action;
 import hudson.model.Item;
@@ -79,6 +85,70 @@ public class FolderEncryptedAction implements Action {
     }
 
     /**
+     * Get native Jenkins credentials for this folder (excluding our own encrypted credentials).
+     */
+    public List<NativeCredentialInfo> getNativeCredentials() {
+        List<NativeCredentialInfo> result = new ArrayList<>();
+        try {
+            List<Credentials> creds = CredentialsProvider.lookupCredentials(
+                Credentials.class, (hudson.model.Item) folder, null, Collections.emptyList()
+            );
+            for (Credentials cred : creds) {
+                // Skip credentials from our own provider
+                if (cred.getClass().getName().startsWith("com.siruoren.encrypted_management.credentials")) {
+                    continue;
+                }
+                String id = "";
+                String displayName = cred.getClass().getSimpleName();
+                String description = "";
+                String type = "CREDENTIAL";
+
+                if (cred instanceof StandardCredentials) {
+                    StandardCredentials sc = (StandardCredentials) cred;
+                    id = sc.getId();
+                    description = sc.getDescription() != null ? sc.getDescription() : "";
+                }
+                if (cred instanceof UsernamePasswordCredentials) {
+                    type = "USERNAME_PASSWORD";
+                    UsernamePasswordCredentials upc = (UsernamePasswordCredentials) cred;
+                    displayName = upc.getUsername();
+                } else if (cred instanceof com.cloudbees.plugins.credentials.common.StandardUsernameCredentials) {
+                    type = "SSH_KEY_PAIR";
+                    com.cloudbees.plugins.credentials.common.StandardUsernameCredentials suc =
+                        (com.cloudbees.plugins.credentials.common.StandardUsernameCredentials) cred;
+                    displayName = suc.getUsername();
+                }
+                result.add(new NativeCredentialInfo(id, displayName, type, description));
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to lookup native credentials for folder: " + folder.getFullName(), e);
+        }
+        return result;
+    }
+
+    /**
+     * Simple POJO for native credential info display.
+     */
+    public static class NativeCredentialInfo {
+        private final String id;
+        private final String displayName;
+        private final String type;
+        private final String description;
+
+        public NativeCredentialInfo(String id, String displayName, String type, String description) {
+            this.id = id;
+            this.displayName = displayName;
+            this.type = type;
+            this.description = description;
+        }
+
+        public String getId() { return id; }
+        public String getDisplayName() { return displayName; }
+        public String getType() { return type; }
+        public String getDescription() { return description; }
+    }
+
+    /**
      * Create a new encrypted variable.
      */
     @RequirePOST
@@ -144,6 +214,110 @@ public class FolderEncryptedAction implements Action {
         }
 
         return successResponse(Messages.EncryptedManagementLink_entryCreated(name));
+    }
+
+    /**
+     * Generate SSH key pair - preview only, does not save.
+     * Returns the generated key pair info for user to confirm.
+     */
+    @RequirePOST
+    public HttpResponse doGenerateSshKeyPreview(StaplerRequest req) throws IOException, ServletException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        JSONObject form = req.getSubmittedForm();
+        String name = form.optString("name", "");
+        int keySize = form.optInt("keySize", 4096);
+        String comment = form.optString("comment", "");
+        String description = form.optString("description", "");
+        String passphrase = form.optString("passphrase", "");
+
+        VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
+        if (!validation.isValid()) {
+            return errorResponse(validation.getErrorMessage());
+        }
+
+        if (EncryptedVariableService.getInstance().entryExists(folder.getFullName(), name)) {
+            return errorResponse(Messages.EncryptedManagementLink_entryAlreadyExists(name));
+        }
+
+        if (keySize != 2048 && keySize != 3072 && keySize != 4096 && keySize != 8192) {
+            return errorResponse(Messages.EncryptedManagementLink_invalidKeySize());
+        }
+
+        try {
+            ModelEntry entry = SshKeyGenerator.generateKeyPairJsch(name, keySize, comment, description, folder.getFullName(), passphrase);
+
+            JSONObject result = new JSONObject();
+            result.put("status", "ok");
+            result.put("name", entry.getName());
+            result.put("type", entry.getType().name());
+            result.put("privateKey", entry.getDecryptedValue());
+            result.put("publicKey", entry.getSshPublicKey());
+            result.put("passphrase", entry.getDecryptedPassphrase() != null ? entry.getDecryptedPassphrase() : "");
+            result.put("description", entry.getDescription() != null ? entry.getDescription() : "");
+            result.put("keySize", keySize);
+            result.put("comment", comment != null ? comment : "");
+
+            return jsonResult(result);
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair preview", e);
+            return errorResponse(Messages.EncryptedManagementLink_sshKeyGenFailed(e.getMessage()));
+        }
+    }
+
+    /**
+     * Save SSH key pair after user confirms the preview.
+     */
+    @RequirePOST
+    public HttpResponse doSaveSshKey(StaplerRequest req) throws IOException, ServletException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        JSONObject form = req.getSubmittedForm();
+        String name = form.optString("name", "");
+        String privateKey = form.optString("privateKey", "");
+        String publicKey = form.optString("publicKey", "");
+        String passphrase = form.optString("passphrase", "");
+        String description = form.optString("description", "");
+        int keySize = form.optInt("keySize", 4096);
+        String comment = form.optString("comment", "");
+
+        VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
+        if (!validation.isValid()) {
+            return errorResponse(validation.getErrorMessage());
+        }
+
+        if (EncryptedVariableService.getInstance().entryExists(folder.getFullName(), name)) {
+            return errorResponse(Messages.EncryptedManagementLink_entryAlreadyExists(name));
+        }
+
+        ModelEntry entry = new ModelEntry();
+        entry.setName(name.trim());
+        entry.setType(ModelEntry.EntryType.SSH_KEY_PAIR);
+        entry.setSecretValue(hudson.util.Secret.fromString(privateKey));
+        entry.setSshPublicKey(publicKey);
+        if (passphrase != null && !passphrase.isEmpty()) {
+            entry.setPassphrase(hudson.util.Secret.fromString(passphrase));
+        }
+        // Put public key info in description if description is empty
+        if ((description == null || description.isEmpty()) && publicKey != null) {
+            entry.setDescription("SSH Public Key: " + publicKey);
+        } else {
+            entry.setDescription(description);
+        }
+        entry.setFolderFullName(folder.getFullName());
+
+        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
+            EncryptedVariableService.getInstance().saveEntry(entry);
+            return true;
+        });
+
+        try {
+            future.get();
+            return successResponse(Messages.EncryptedManagementLink_sshKeyGenerated(name));
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to save SSH key pair", e);
+            return errorResponse(Messages.EncryptedManagementLink_sshKeyGenFailed(e.getMessage()));
+        }
     }
 
     /**

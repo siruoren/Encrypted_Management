@@ -23,6 +23,7 @@ public class ModelEntry implements Serializable {
     private String description;
     private String sshPublicKey;
     private String username;
+    private Secret passphrase;
     private String folderFullName;
     private long createdTimestamp;
     private long updatedTimestamp;
@@ -92,6 +93,18 @@ public class ModelEntry implements Serializable {
 
     public void setUsername(String username) {
         this.username = username;
+    }
+
+    public Secret getPassphrase() {
+        return passphrase;
+    }
+
+    public void setPassphrase(Secret passphrase) {
+        this.passphrase = passphrase;
+    }
+
+    public String getDecryptedPassphrase() {
+        return passphrase != null ? Secret.toString(passphrase) : null;
     }
 
     public String getFolderFullName() {

@@ -166,6 +166,112 @@ public class EncryptedManagementLink extends ManagementLink {
     }
 
     /**
+     * Generate SSH key pair - preview only, does not save.
+     * Returns the generated key pair info for user to confirm.
+     */
+    @RequirePOST
+    public HttpResponse doGenerateSshKeyPreview(StaplerRequest req) throws IOException, ServletException {
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+
+        JSONObject form = req.getSubmittedForm();
+        String name = form.optString("name", "");
+        int keySize = form.optInt("keySize", 4096);
+        String comment = form.optString("comment", "");
+        String description = form.optString("description", "");
+        String folderFullName = form.optString("folderFullName", "");
+        String passphrase = form.optString("passphrase", "");
+
+        VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
+        if (!validation.isValid()) {
+            return errorResponse(validation.getErrorMessage());
+        }
+
+        if (EncryptedVariableService.getInstance().entryExists(folderFullName, name)) {
+            return errorResponse(Messages.EncryptedManagementLink_entryAlreadyExists(name));
+        }
+
+        if (keySize != 2048 && keySize != 3072 && keySize != 4096 && keySize != 8192) {
+            return errorResponse(Messages.EncryptedManagementLink_invalidKeySize());
+        }
+
+        try {
+            ModelEntry entry = SshKeyGenerator.generateKeyPairJsch(name, keySize, comment, description, folderFullName, passphrase);
+
+            JSONObject result = new JSONObject();
+            result.put("status", "ok");
+            result.put("name", entry.getName());
+            result.put("type", entry.getType().name());
+            result.put("privateKey", entry.getDecryptedValue());
+            result.put("publicKey", entry.getSshPublicKey());
+            result.put("passphrase", entry.getDecryptedPassphrase() != null ? entry.getDecryptedPassphrase() : "");
+            result.put("description", entry.getDescription() != null ? entry.getDescription() : "");
+            result.put("keySize", keySize);
+            result.put("comment", comment != null ? comment : "");
+            result.put("folderFullName", folderFullName);
+
+            return jsonResult(result);
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair preview", e);
+            return errorResponse(Messages.EncryptedManagementLink_sshKeyGenFailed(e.getMessage()));
+        }
+    }
+
+    /**
+     * Save SSH key pair after user confirms the preview.
+     */
+    @RequirePOST
+    public HttpResponse doSaveSshKey(StaplerRequest req) throws IOException, ServletException {
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
+
+        JSONObject form = req.getSubmittedForm();
+        String name = form.optString("name", "");
+        String privateKey = form.optString("privateKey", "");
+        String publicKey = form.optString("publicKey", "");
+        String passphrase = form.optString("passphrase", "");
+        String description = form.optString("description", "");
+        String folderFullName = form.optString("folderFullName", "");
+        int keySize = form.optInt("keySize", 4096);
+        String comment = form.optString("comment", "");
+
+        VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
+        if (!validation.isValid()) {
+            return errorResponse(validation.getErrorMessage());
+        }
+
+        if (EncryptedVariableService.getInstance().entryExists(folderFullName, name)) {
+            return errorResponse(Messages.EncryptedManagementLink_entryAlreadyExists(name));
+        }
+
+        ModelEntry entry = new ModelEntry();
+        entry.setName(name.trim());
+        entry.setType(ModelEntry.EntryType.SSH_KEY_PAIR);
+        entry.setSecretValue(hudson.util.Secret.fromString(privateKey));
+        entry.setSshPublicKey(publicKey);
+        if (passphrase != null && !passphrase.isEmpty()) {
+            entry.setPassphrase(hudson.util.Secret.fromString(passphrase));
+        }
+        if ((description == null || description.isEmpty()) && publicKey != null) {
+            entry.setDescription("SSH Public Key: " + publicKey);
+        } else {
+            entry.setDescription(description);
+        }
+        entry.setFolderFullName(folderFullName);
+
+        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
+            EncryptedVariableService.getInstance().saveEntry(entry);
+            return true;
+        });
+
+        try {
+            future.get();
+            return successResponse(Messages.EncryptedManagementLink_sshKeyGenerated(name));
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to save SSH key pair", e);
+            return errorResponse(Messages.EncryptedManagementLink_sshKeyGenFailed(e.getMessage()));
+        }
+    }
+
+    /**
      * Generate SSH key pair.
      */
     @RequirePOST

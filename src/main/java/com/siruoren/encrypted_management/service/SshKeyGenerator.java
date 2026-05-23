@@ -86,6 +86,13 @@ public class SshKeyGenerator {
      * Quick generate using JSch for standard OpenSSH format.
      */
     public static ModelEntry generateKeyPairJsch(String variableName, int keySize, String comment, String description, String folderFullName) throws Exception {
+        return generateKeyPairJsch(variableName, keySize, comment, description, folderFullName, null);
+    }
+
+    /**
+     * Quick generate using JSch for standard OpenSSH format with optional passphrase.
+     */
+    public static ModelEntry generateKeyPairJsch(String variableName, int keySize, String comment, String description, String folderFullName, String passphrase) throws Exception {
         if (keySize <= 0) {
             keySize = DEFAULT_KEY_SIZE;
         }
@@ -93,9 +100,13 @@ public class SshKeyGenerator {
         JSch jsch = new JSch();
         KeyPair keyPair = KeyPair.genKeyPair(jsch, KeyPair.RSA, keySize);
 
-        // Get private key bytes
+        // Get private key bytes (with passphrase if provided)
         ByteArrayOutputStream privateKeyOut = new ByteArrayOutputStream();
-        keyPair.writePrivateKey(privateKeyOut);
+        if (passphrase != null && !passphrase.isEmpty()) {
+            keyPair.writePrivateKey(privateKeyOut, passphrase.getBytes(StandardCharsets.UTF_8));
+        } else {
+            keyPair.writePrivateKey(privateKeyOut);
+        }
         String privateKeyStr = privateKeyOut.toString(StandardCharsets.UTF_8);
 
         // Get public key bytes
@@ -112,6 +123,9 @@ public class SshKeyGenerator {
         entry.setSshPublicKey(publicKeyStr);
         entry.setDescription(description);
         entry.setFolderFullName(folderFullName);
+        if (passphrase != null && !passphrase.isEmpty()) {
+            entry.setPassphrase(Secret.fromString(passphrase));
+        }
 
         return entry;
     }
