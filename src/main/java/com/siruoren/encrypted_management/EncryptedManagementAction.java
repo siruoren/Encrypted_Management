@@ -173,6 +173,11 @@ public class EncryptedManagementAction implements Action {
             result.put("username", ssh.getUsername());
             result.put("passphrase", Secret.toString(ssh.getPassphrase()));
             result.put("privateKey", ssh.getPrivateKey());
+            // 从私钥推导公钥
+            String publicKey = derivePublicKeyFromPrivate(ssh.getPrivateKey(), ssh.getPassphrase());
+            if (publicKey != null && !publicKey.isEmpty()) {
+                result.put("publicKey", publicKey);
+            }
         }
 
         return jsonResult(result);
@@ -285,10 +290,10 @@ public class EncryptedManagementAction implements Action {
             BasicSSHUserPrivateKey credential = new BasicSSHUserPrivateKey(
                     CredentialsScope.GLOBAL,
                     (id != null && !id.isEmpty()) ? id : null,
-                    description,
+                    username,
                     source,
                     passphrase != null ? passphrase : "",
-                    username);
+                    description);
 
             store.addCredentials(Domain.global(), credential);
             return successResponse("SSH credential created successfully");
@@ -425,10 +430,10 @@ public class EncryptedManagementAction implements Action {
             BasicSSHUserPrivateKey updated = new BasicSSHUserPrivateKey(
                     CredentialsScope.GLOBAL,
                     id,
-                    description != null ? description : existing.getDescription(),
+                    username != null ? username : oldCred.getUsername(),
                     newSource,
                     passphrase != null ? passphrase : Secret.toString(oldCred.getPassphrase()),
-                    username != null ? username : oldCred.getUsername());
+                    description != null ? description : existing.getDescription());
 
             store.updateCredentials(Domain.global(), existing, updated);
             return successResponse("SSH credential updated successfully");
@@ -471,6 +476,213 @@ public class EncryptedManagementAction implements Action {
             LOGGER.log(Level.SEVERE, "Failed to delete credential", e);
             return errorResponse("Failed to delete credential: " + e.getMessage());
         }
+    }
+
+    /**
+     * API: 生成SSH密钥对
+     * 如果提供passphrase，则用passphrase加密私钥
+     */
+    @RequirePOST
+    public HttpResponse doGenerateKeyPair(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String passphrase = req.getParameter("passphrase");
+
+        try {
+            java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
+            keyGen.initialize(2048, new java.security.SecureRandom());
+            java.security.KeyPair keyPair = keyGen.generateKeyPair();
+
+            // 私钥 - PEM格式（如果有passphrase则加密）
+            String privateKeyPem;
+            if (passphrase != null && !passphrase.isEmpty()) {
+                privateKeyPem = encryptPrivateKeyToPEM(keyPair.getPrivate(), passphrase);
+            } else {
+                privateKeyPem = encodePrivateKeyToPEM(keyPair.getPrivate());
+            }
+
+            // 公钥 - OpenSSH格式
+            String publicKey = getSSHPublicKey(keyPair.getPublic());
+
+            JSONObject result = new JSONObject();
+            result.put("privateKey", privateKeyPem);
+            result.put("publicKey", publicKey);
+
+            JSONObject json = new JSONObject();
+            json.put("success", true);
+            json.put("data", result);
+            return jsonResult(json);
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair", e);
+            return errorResponse("Failed to generate key pair: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 将RSA私钥编码为PKCS#8 PEM格式（无加密）
+     */
+    private String encodePrivateKeyToPEM(java.security.PrivateKey privateKey) throws java.io.IOException {
+        java.util.Base64.Encoder encoder = java.util.Base64.getMimeEncoder(64, "\n".getBytes());
+        StringBuilder sb = new StringBuilder();
+        sb.append("-----BEGIN PRIVATE KEY-----\n");
+        sb.append(encoder.encodeToString(privateKey.getEncoded()));
+        sb.append("\n-----END PRIVATE KEY-----");
+        return sb.toString();
+    }
+
+    /**
+     * 将RSA私钥用passphrase加密，输出为PEM格式（PKCS#8 AES-128-CBC加密）
+     */
+    private String encryptPrivateKeyToPEM(java.security.PrivateKey privateKey, String passphrase) throws Exception {
+        java.io.StringWriter stringWriter = new java.io.StringWriter();
+        try (org.bouncycastle.openssl.jcajce.JcaPEMWriter pemWriter = new org.bouncycastle.openssl.jcajce.JcaPEMWriter(stringWriter)) {
+            org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfoBuilder builder =
+                    new org.bouncycastle.pkcs.jcajce.JcaPKCS8EncryptedPrivateKeyInfoBuilder(privateKey);
+            org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo encryptedInfo = builder.build(
+                    new org.bouncycastle.pkcs.jcajce.JcePKCSPBEOutputEncryptorBuilder(
+                            org.bouncycastle.asn1.nist.NISTObjectIdentifiers.id_aes128_CBC)
+                            .setProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider())
+                            .build(passphrase.toCharArray()));
+            pemWriter.writeObject(encryptedInfo);
+        }
+        return stringWriter.toString().trim();
+    }
+
+    /**
+     * 将RSA公钥转为OpenSSH格式
+     */
+    private String getSSHPublicKey(java.security.PublicKey publicKey) throws java.io.IOException {
+        if (publicKey instanceof java.security.interfaces.RSAPublicKey) {
+            java.security.interfaces.RSAPublicKey rsaKey = (java.security.interfaces.RSAPublicKey) publicKey;
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            // key type
+            byte[] typeBytes = "ssh-rsa".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            bos.write((typeBytes.length >>> 24) & 0xFF);
+            bos.write((typeBytes.length >>> 16) & 0xFF);
+            bos.write((typeBytes.length >>> 8) & 0xFF);
+            bos.write(typeBytes.length & 0xFF);
+            bos.write(typeBytes);
+            // exponent
+            byte[] expBytes = rsaKey.getPublicExponent().toByteArray();
+            bos.write((expBytes.length >>> 24) & 0xFF);
+            bos.write((expBytes.length >>> 16) & 0xFF);
+            bos.write((expBytes.length >>> 8) & 0xFF);
+            bos.write(expBytes.length & 0xFF);
+            bos.write(expBytes);
+            // modulus
+            byte[] modBytes = rsaKey.getModulus().toByteArray();
+            bos.write((modBytes.length >>> 24) & 0xFF);
+            bos.write((modBytes.length >>> 16) & 0xFF);
+            bos.write((modBytes.length >>> 8) & 0xFF);
+            bos.write(modBytes.length & 0xFF);
+            bos.write(modBytes);
+            return "ssh-rsa " + java.util.Base64.getEncoder().encodeToString(bos.toByteArray());
+        }
+        return "";
+    }
+
+    /**
+     * 从PEM格式私钥推导出OpenSSH格式公钥
+     * 支持PKCS#8和PKCS#1格式，支持passphrase加密的私钥
+     */
+    private String derivePublicKeyFromPrivate(String privateKeyPem, Secret passphrase) {
+        try {
+            // 去除PEM头尾
+            String pemContent = privateKeyPem.trim();
+            byte[] keyBytes;
+
+            if (pemContent.contains("ENCRYPTED")) {
+                // 加密的私钥，需要用passphrase解密
+                if (passphrase == null) {
+                    return "";
+                }
+                try (java.io.StringReader reader = new java.io.StringReader(pemContent)) {
+                    org.bouncycastle.openssl.PEMParser pemParser = new org.bouncycastle.openssl.PEMParser(reader);
+                    Object obj = pemParser.readObject();
+                    if (obj instanceof org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo) {
+                        org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo encryptedInfo =
+                                (org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo) obj;
+                        org.bouncycastle.asn1.pkcs.PrivateKeyInfo decryptedPKI =
+                                encryptedInfo.decryptPrivateKeyInfo(
+                                        new org.bouncycastle.pkcs.jcajce.JcePKCSPBEInputDecryptorProviderBuilder()
+                                                .setProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider())
+                                                .build(Secret.toString(passphrase).toCharArray()));
+                        java.security.KeyFactory keyFactory = java.security.KeyFactory.getInstance("RSA");
+                        java.security.PrivateKey privKey = keyFactory.generatePrivate(
+                                new java.security.spec.PKCS8EncodedKeySpec(decryptedPKI.getEncoded()));
+                        if (privKey instanceof java.security.interfaces.RSAPrivateCrtKey) {
+                            java.security.interfaces.RSAPrivateCrtKey crtKey = (java.security.interfaces.RSAPrivateCrtKey) privKey;
+                            java.security.spec.RSAPublicKeySpec pubSpec = new java.security.spec.RSAPublicKeySpec(
+                                    crtKey.getModulus(), crtKey.getPublicExponent());
+                            return getSSHPublicKey(keyFactory.generatePublic(pubSpec));
+                        }
+                    }
+                }
+                return "";
+            }
+
+            // 未加密的私钥
+            pemContent = pemContent.replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replace("-----BEGIN RSA PRIVATE KEY-----", "")
+                    .replace("-----END RSA PRIVATE KEY-----", "")
+                    .replaceAll("\\s", "");
+            keyBytes = java.util.Base64.getDecoder().decode(pemContent);
+
+            java.security.KeyFactory keyFactory = java.security.KeyFactory.getInstance("RSA");
+            java.security.PrivateKey privKey;
+
+            try {
+                privKey = keyFactory.generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(keyBytes));
+            } catch (java.security.spec.InvalidKeySpecException e) {
+                // 尝试PKCS#1格式
+                privKey = keyFactory.generatePrivate(new java.security.spec.RSAPrivateKeySpec(
+                        readASN1Integer(keyBytes, 0), readASN1Integer(keyBytes, 1)));
+            }
+
+            if (privKey instanceof java.security.interfaces.RSAPrivateKey) {
+                java.security.interfaces.RSAPrivateKey rsaKey = (java.security.interfaces.RSAPrivateKey) privKey;
+                java.security.spec.RSAPublicKeySpec pubSpec;
+                if (rsaKey instanceof java.security.interfaces.RSAPrivateCrtKey) {
+                    java.security.interfaces.RSAPrivateCrtKey crtKey = (java.security.interfaces.RSAPrivateCrtKey) rsaKey;
+                    pubSpec = new java.security.spec.RSAPublicKeySpec(crtKey.getModulus(), crtKey.getPublicExponent());
+                } else {
+                    // 没有CRT信息，无法推导公钥
+                    return "";
+                }
+                java.security.PublicKey pubKey = keyFactory.generatePublic(pubSpec);
+                return getSSHPublicKey(pubKey);
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to derive public key from private key", e);
+        }
+        return "";
+    }
+
+    /**
+     * 简单的ASN1整数读取（用于PKCS#1格式解析）
+     */
+    private java.math.BigInteger readASN1Integer(byte[] data, int index) {
+        int offset = 0;
+        for (int i = 0; i <= index; i++) {
+            if (offset >= data.length || data[offset] != 0x02) break;
+            offset++; // skip tag
+            int len = data[offset++] & 0xFF;
+            if (len > 127) {
+                int lenBytes = len & 0x7F;
+                len = 0;
+                for (int j = 0; j < lenBytes; j++) {
+                    len = (len << 8) | (data[offset++] & 0xFF);
+                }
+            }
+            if (i == index) {
+                byte[] intBytes = new byte[len];
+                System.arraycopy(data, offset, intBytes, 0, len);
+                return new java.math.BigInteger(1, intBytes);
+            }
+            offset += len;
+        }
+        return java.math.BigInteger.ZERO;
     }
 
     private String getCredentialsTypeName(StandardCredentials c) {

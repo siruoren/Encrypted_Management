@@ -87,6 +87,13 @@
                         <div class="jenkins-form-label">${%Private Key}</div>
                         <div class="jenkins-form-control">
                             <textarea id="credPrivateKey" class="jenkins-input" rows="8" placeholder="${%Enter private key}"></textarea>
+                            <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPair()">${%Generate Key Pair}</button>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Public Key}</div>
+                        <div class="jenkins-form-control">
+                            <textarea id="credPublicKey" class="jenkins-input" rows="2" placeholder="${%Optional - auto-generated with key pair}" readonly="true"></textarea>
                         </div>
                     </div>
                 </div>
@@ -152,6 +159,13 @@
                             <div class="jenkins-form-label">${%Private Key}</div>
                             <div class="jenkins-form-control">
                                 <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%Leave empty to keep current value}"></textarea>
+                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPairForUpdate()">${%Generate Key Pair}</button>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Public Key}</div>
+                            <div class="jenkins-form-control">
+                                <textarea id="updatePublicKey" class="jenkins-input" rows="2" placeholder="${%Optional - auto-generated with key pair}" readonly="true"></textarea>
                             </div>
                         </div>
                     </div>
@@ -200,7 +214,9 @@
                         passphrase: "${%Passphrase}",
                         privateKey: "${%Private Key}",
                         credentialUpdated: "${%Credential updated successfully. Reloading...}",
-                        updateFailed: "${%Update failed}"
+                        updateFailed: "${%Update failed}",
+                        generateKeyPair: "${%Generate Key Pair}",
+                        publicKey: "${%Public Key}"
                     };
 
                     function toggleCredentialForm() {
@@ -208,6 +224,82 @@
                         document.getElementById('form-secret-text').style.display = type === 'SECRET_TEXT' ? '' : 'none';
                         document.getElementById('form-username-password').style.display = type === 'USERNAME_PASSWORD' ? '' : 'none';
                         document.getElementById('form-ssh-key').style.display = type === 'SSH_KEY' ? '' : 'none';
+                    }
+
+                    /**
+                     * 生成SSH密钥对并填充到创建表单
+                     */
+                    function generateKeyPair() {
+                        var btn = event.target;
+                        btn.disabled = true;
+                        btn.textContent = '...';
+                        var passphrase = document.getElementById('credPassphrase').value.trim();
+                        var body = '';
+                        if (passphrase) {
+                            body = 'passphrase=' + encodeURIComponent(passphrase);
+                        }
+                        secureFetch(credentialsUrl + 'generateKeyPair', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            },
+                            body: body
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success && data.data) {
+                                document.getElementById('credPrivateKey').value = data.data.privateKey;
+                                document.getElementById('credPublicKey').value = data.data.publicKey;
+                            } else {
+                                showMessage(data.message || i18n.requestFailed, 'error');
+                            }
+                            btn.disabled = false;
+                            btn.textContent = i18n.generateKeyPair;
+                        })
+                        .catch(function(err) {
+                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
+                            btn.disabled = false;
+                            btn.textContent = i18n.generateKeyPair;
+                        });
+                    }
+
+                    /**
+                     * 生成SSH密钥对并填充到更新弹窗
+                     */
+                    function generateKeyPairForUpdate() {
+                        var btn = event.target;
+                        btn.disabled = true;
+                        btn.textContent = '...';
+                        var passphrase = document.getElementById('updatePassphrase').value.trim();
+                        var body = '';
+                        if (passphrase) {
+                            body = 'passphrase=' + encodeURIComponent(passphrase);
+                        }
+                        secureFetch(credentialsUrl + 'generateKeyPair', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            },
+                            body: body
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success && data.data) {
+                                document.getElementById('updatePrivateKey').value = data.data.privateKey;
+                                document.getElementById('updatePublicKey').value = data.data.publicKey;
+                            } else {
+                                showMessage(data.message || i18n.requestFailed, 'error');
+                            }
+                            btn.disabled = false;
+                            btn.textContent = i18n.generateKeyPair;
+                        })
+                        .catch(function(err) {
+                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
+                            btn.disabled = false;
+                            btn.textContent = i18n.generateKeyPair;
+                        });
                     }
 
                     /**
@@ -413,7 +505,11 @@
                                 } else if (typeKey === 'SECRET_TEXT') {
                                     detailDiv.textContent = i18n.secret + ': ' + data.secret;
                                 } else if (typeKey === 'SSH_KEY') {
-                                    detailDiv.textContent = i18n.username + ': ' + data.username + '\n' + i18n.passphrase + ': ' + (data.passphrase || '(empty)') + '\n' + i18n.privateKey + ':\n' + data.privateKey;
+                                    var sshText = i18n.username + ': ' + data.username + '\n' + i18n.passphrase + ': ' + (data.passphrase || '(empty)') + '\n' + i18n.privateKey + ':\n' + data.privateKey;
+                                    if (data.publicKey) {
+                                        sshText += '\n' + i18n.publicKey + ':\n' + data.publicKey;
+                                    }
+                                    detailDiv.textContent = sshText;
                                 }
 
                                 var tdKind = row.children[2];
