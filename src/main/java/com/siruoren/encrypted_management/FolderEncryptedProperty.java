@@ -100,7 +100,7 @@ public class FolderEncryptedProperty extends FolderProperty<Folder> {
     }
 
     @Extension
-    @Symbol("encryptedVariables")
+    @Symbol("credentials")
     public static class DescriptorImpl extends FolderPropertyDescriptor {
         @Override
         @Nonnull

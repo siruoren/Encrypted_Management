@@ -4,10 +4,11 @@ import com.cloudbees.hudson.plugins.folder.Folder;
 import hudson.Extension;
 import hudson.model.Action;
 import hudson.model.Item;
-import hudson.security.Permission;
 import hudson.util.Secret;
 import jenkins.model.Jenkins;
 import jenkins.model.TransientActionFactory;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
 import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
@@ -19,14 +20,12 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * 加密变量管理页面 Action，提供查看、解密、创建加密变量的功能
+ * 凭据管理页面 Action，提供查看、解密、创建凭据的功能
+ * 每次打开页面自动加载当前文件夹的所有凭证
  */
 public class EncryptedManagementAction implements Action {
     private static final Logger LOGGER = Logger.getLogger(EncryptedManagementAction.class.getName());
@@ -39,7 +38,7 @@ public class EncryptedManagementAction implements Action {
 
     @Override
     public String getIconFileName() {
-        return "symbol-lock plugin-encrypted-management";
+        return folder.hasPermission(Item.CONFIGURE) ? "symbol-credentials plugin-encrypted-management" : null;
     }
 
     @Override
@@ -49,15 +48,19 @@ public class EncryptedManagementAction implements Action {
 
     @Override
     public String getUrlName() {
-        return "encrypted-variables";
+        return "Encrypted_Management";
     }
 
     public Folder getFolder() {
         return folder;
     }
 
+    public String getFolderFullName() {
+        return folder.getFullName();
+    }
+
     /**
-     * 获取当前文件夹的加密变量列表
+     * 获取当前文件夹的凭据列表（页面渲染时自动调用）
      */
     public List<EncryptedVariable> getVariables() {
         FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
@@ -68,7 +71,39 @@ public class EncryptedManagementAction implements Action {
     }
 
     /**
-     * 解密指定索引的加密变量，使用线程池异步执行
+     * API: 以JSON格式返回当前文件夹的所有凭据（供前端AJAX自动加载）
+     */
+    public HttpResponse doListCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        List<EncryptedVariable> variables = getVariables();
+        JSONArray arr = new JSONArray();
+        for (int i = 0; i < variables.size(); i++) {
+            EncryptedVariable v = variables.get(i);
+            JSONObject obj = new JSONObject();
+            obj.put("index", i);
+            obj.put("name", v.getName());
+            obj.put("encryptedValue", v.getEncryptedValue());
+            arr.add(obj);
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("credentials", arr);
+        result.put("folder", folder.getFullName());
+        result.put("count", variables.size());
+
+        return new HttpResponse() {
+            @Override
+            public void generateResponse(StaplerRequest req, StaplerResponse rsp, Object node) throws IOException {
+                rsp.setContentType("application/json;charset=UTF-8");
+                rsp.getWriter().write(result.toString());
+            }
+        };
+    }
+
+    /**
+     * 解密指定索引的凭据
      */
     @RequirePOST
     public void doDecrypt(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -90,28 +125,22 @@ public class EncryptedManagementAction implements Action {
 
         FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
         if (property == null) {
-            sendError(rsp, HttpServletResponse.SC_NOT_FOUND, "No encrypted variables found");
+            sendError(rsp, HttpServletResponse.SC_NOT_FOUND, "No credentials found");
             return;
         }
 
         EncryptedVariable variable = property.getVariable(index);
         if (variable == null) {
-            sendError(rsp, HttpServletResponse.SC_NOT_FOUND, "Variable not found at index: " + index);
+            sendError(rsp, HttpServletResponse.SC_NOT_FOUND, "Credential not found at index: " + index);
             return;
         }
 
-        // 使用线程池异步解密，防止阻塞
-        ExecutorService executor = ThreadPoolManager.getInstance().getExecutor();
-        Future<String> future = executor.submit((Callable<String>) () -> {
-            Secret secret = variable.getValue();
-            return secret != null ? Secret.toString(secret) : "";
-        });
-
         String plainText;
         try {
-            plainText = future.get();
+            Secret secret = variable.getValue();
+            plainText = secret != null ? Secret.toString(secret) : "";
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to decrypt variable", e);
+            LOGGER.log(Level.SEVERE, "Failed to decrypt credential", e);
             sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Decryption failed");
             return;
         }
@@ -121,7 +150,7 @@ public class EncryptedManagementAction implements Action {
     }
 
     /**
-     * 创建新的加密变量并写入当前文件夹配置，然后 reload
+     * 创建新的凭据并写入当前文件夹配置，然后 reload
      */
     @RequirePOST
     public void doCreate(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -131,64 +160,46 @@ public class EncryptedManagementAction implements Action {
         String value = req.getParameter("value");
 
         if (name == null || name.trim().isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Variable name is required");
+            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Credential name is required");
             return;
         }
         if (value == null || value.trim().isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Variable value is required");
+            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Credential value is required");
             return;
         }
 
-        // 使用线程池异步执行创建操作
-        ExecutorService executor = ThreadPoolManager.getInstance().getExecutor();
-        Future<Boolean> future = executor.submit((Callable<Boolean>) () -> {
-            try {
-                FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
-                if (property == null) {
-                    property = new FolderEncryptedProperty();
-                    folder.addProperty(property);
-                }
-
-                // 检查同名变量是否已存在
-                EncryptedVariable existing = property.findVariable(name.trim());
-                if (existing != null) {
-                    return false;
-                }
-
-                // 创建加密变量
-                EncryptedVariable newVar = new EncryptedVariable(name.trim(), Secret.fromString(value));
-                property.addVariable(newVar);
-
-                // 保存文件夹配置
-                property.saveFolderConfig();
-                return true;
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Failed to create encrypted variable", e);
-                return false;
-            }
-        });
-
-        boolean success;
         try {
-            success = future.get();
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create encrypted variable", e);
-            sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Creation failed");
-            return;
-        }
+            FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
+            if (property == null) {
+                property = new FolderEncryptedProperty();
+                folder.addProperty(property);
+            }
 
-        if (!success) {
+            // 检查同名凭据是否已存在
+            EncryptedVariable existing = property.findVariable(name.trim());
+            if (existing != null) {
+                rsp.setContentType("application/json;charset=UTF-8");
+                rsp.getWriter().write("{\"success\":false,\"message\":\"Credential with this name already exists\"}");
+                return;
+            }
+
+            // 创建凭据
+            EncryptedVariable newVar = new EncryptedVariable(name.trim(), Secret.fromString(value));
+            property.addVariable(newVar);
+
+            // 保存文件夹配置
+            property.saveFolderConfig();
+
             rsp.setContentType("application/json;charset=UTF-8");
-            rsp.getWriter().write("{\"success\":false,\"message\":\"Variable with this name already exists\"}");
-            return;
+            rsp.getWriter().write("{\"success\":true,\"message\":\"Credential created successfully\"}");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to create credential", e);
+            sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Creation failed");
         }
-
-        rsp.setContentType("application/json;charset=UTF-8");
-        rsp.getWriter().write("{\"success\":true,\"message\":\"Variable created successfully\"}");
     }
 
     /**
-     * 删除指定名称的加密变量
+     * 删除指定名称的凭据
      */
     @RequirePOST
     public void doDelete(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -196,39 +207,27 @@ public class EncryptedManagementAction implements Action {
 
         String name = req.getParameter("name");
         if (name == null || name.trim().isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Variable name is required");
+            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Credential name is required");
             return;
         }
 
-        ExecutorService executor = ThreadPoolManager.getInstance().getExecutor();
-        Future<Boolean> future = executor.submit((Callable<Boolean>) () -> {
-            try {
-                FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
-                if (property == null) {
-                    return false;
-                }
-                boolean removed = property.removeVariable(name.trim());
-                if (removed) {
-                    property.saveFolderConfig();
-                }
-                return removed;
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Failed to delete encrypted variable", e);
-                return false;
-            }
-        });
-
-        boolean success;
         try {
-            success = future.get();
+            FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
+            if (property == null) {
+                rsp.setContentType("application/json;charset=UTF-8");
+                rsp.getWriter().write("{\"success\":false}");
+                return;
+            }
+            boolean removed = property.removeVariable(name.trim());
+            if (removed) {
+                property.saveFolderConfig();
+            }
+            rsp.setContentType("application/json;charset=UTF-8");
+            rsp.getWriter().write("{\"success\":" + removed + "}");
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to delete encrypted variable", e);
+            LOGGER.log(Level.SEVERE, "Failed to delete credential", e);
             sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Deletion failed");
-            return;
         }
-
-        rsp.setContentType("application/json;charset=UTF-8");
-        rsp.getWriter().write("{\"success\":" + success + "}");
     }
 
     private void sendError(StaplerResponse rsp, int code, String message) throws IOException {

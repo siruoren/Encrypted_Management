@@ -1,72 +1,34 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
-    <l:layout title="${%Encrypted Variables Management} - ${it.folder.displayName}">
+    <l:layout title="${%Credentials Management} - ${it.folder.displayName}">
         <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
         <l:main-panel>
-            <h1>${%Encrypted Variables Management}</h1>
+            <h1>${%Credentials Management}</h1>
             <p>${%Folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
 
-            <!-- 加密变量列表 -->
-            <j:choose>
-                <j:when test="${empty(it.variables)}">
-                    <div class="jenkins-alert jenkins-alert-info">
-                        ${%No encrypted variables configured for this folder.}
-                    </div>
-                </j:when>
-                <j:otherwise>
-                    <table class="jenkins-table jenkins-table--medium sortable" id="encrypted-variables-table">
-                        <thead>
-                            <tr>
-                                <th>${%Name}</th>
-                                <th>${%Encrypted Value}</th>
-                                <th style="text-align:right">${%Actions}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <j:forEach var="variable" items="${it.variables}" varStatus="loop">
-                                <tr data-index="${loop.index}">
-                                    <td>${variable.name}</td>
-                                    <td>
-                                        <span class="encrypted-value">${variable.encryptedValue}</span>
-                                        <span class="decrypted-value" id="decrypted-${loop.index}" style="display:none;color:#0d6efd;font-weight:bold;"></span>
-                                    </td>
-                                    <td style="text-align:right">
-                                        <button class="jenkins-button jenkins-button--primary decrypt-btn"
-                                                data-index="${loop.index}"
-                                                onclick="decryptVariable(${loop.index})">
-                                            ${%Decrypt}
-                                        </button>
-                                        <button class="jenkins-button jenkins-button--danger delete-btn"
-                                                data-name="${variable.name}"
-                                                onclick="deleteVariable('${variable.name}')">
-                                            ${%Delete}
-                                        </button>
-                                    </td>
-                                </tr>
-                            </j:forEach>
-                        </tbody>
-                    </table>
-                </j:otherwise>
-            </j:choose>
+            <!-- 凭据列表（由JS自动加载） -->
+            <div id="credentials-container">
+                <div class="jenkins-alert jenkins-alert-info">${%Loading credentials...}</div>
+            </div>
 
-            <!-- 创建新加密变量表单 -->
+            <!-- 创建新凭据表单 -->
             <div style="margin-top: 2em;">
-                <h2>${%Create New Encrypted Variable}</h2>
+                <h2>${%Create New Credential}</h2>
                 <div class="jenkins-form">
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Variable Name}</div>
+                        <div class="jenkins-form-label">${%Credential Name}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="varName" class="jenkins-input" placeholder="${%Enter variable name}"/>
+                            <input type="text" id="varName" class="jenkins-input" placeholder="${%Enter credential name}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Variable Value}</div>
+                        <div class="jenkins-form-label">${%Credential Value}</div>
                         <div class="jenkins-form-control">
-                            <input type="password" id="varValue" class="jenkins-input" placeholder="${%Enter variable value}"/>
+                            <input type="password" id="varValue" class="jenkins-input" placeholder="${%Enter credential value}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="createVariable()">
+                        <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">
                             ${%Create}
                         </button>
                     </div>
@@ -78,25 +40,154 @@
 
             <st:once>
                 <script type="text/javascript">
+                //<![CDATA[
                     var crumbValue = "${h.getCrumb(request)}";
                     var crumbHeaderName = "${app.crumbIssuer.descriptor.crumbRequestField}";
+                    var credentialsUrl = "${rootURL}/${it.folder.url}Encrypted_Management/";
 
-                    // i18n messages injected from Jelly
                     var i18n = {
                         hide: "${%Hide}",
                         decrypt: "${%Decrypt}",
                         decryptionFailed: "${%Decryption failed}",
                         requestFailed: "${%Request failed}",
-                        variableNameRequired: "${%Variable name is required}",
-                        variableValueRequired: "${%Variable value is required}",
-                        variableCreated: "${%Variable created successfully. Reloading...}",
+                        credentialNameRequired: "${%Credential name is required}",
+                        credentialValueRequired: "${%Credential value is required}",
+                        credentialCreated: "${%Credential created successfully. Reloading...}",
                         creationFailed: "${%Creation failed}",
-                        confirmDelete: "${%Are you sure you want to delete variable}",
-                        variableDeleted: "${%Variable deleted. Reloading...}",
-                        failedToDelete: "${%Failed to delete variable}"
+                        confirmDelete: "${%Are you sure you want to delete credential}",
+                        credentialDeleted: "${%Credential deleted. Reloading...}",
+                        failedToDelete: "${%Failed to delete credential}",
+                        noCredentials: "${%No credentials configured for this folder.}",
+                        name: "${%Name}",
+                        encryptedValue: "${%Encrypted Value}",
+                        actions: "${%Actions}",
+                        deleteLabel: "${%Delete}",
+                        loading: "${%Loading credentials...}"
                     };
 
-                    function decryptVariable(index) {
+                    function escapeHtml(str) {
+                        if (!str) return '';
+                        var div = document.createElement('div');
+                        div.appendChild(document.createTextNode(str));
+                        return div.innerHTML;
+                    }
+
+                    function escapeJs(str) {
+                        if (!str) return '';
+                        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+                    }
+
+                    /**
+                     * 页面加载时自动加载凭据列表
+                     */
+                    (function loadCredentials() {
+                        var container = document.getElementById('credentials-container');
+                        container.innerHTML = '';
+                        var alertDiv = document.createElement('div');
+                        alertDiv.className = 'jenkins-alert jenkins-alert-info';
+                        alertDiv.textContent = i18n.loading;
+                        container.appendChild(alertDiv);
+
+                        fetch(credentialsUrl + 'listCredentials', {
+                            method: 'GET',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success && data.credentials && data.credentials.length > 0) {
+                                renderCredentialsTable(data.credentials);
+                            } else {
+                                container.innerHTML = '';
+                                var emptyDiv = document.createElement('div');
+                                emptyDiv.className = 'jenkins-alert jenkins-alert-info';
+                                emptyDiv.textContent = i18n.noCredentials;
+                                container.appendChild(emptyDiv);
+                            }
+                        })
+                        .catch(function(err) {
+                            container.innerHTML = '';
+                            var errDiv = document.createElement('div');
+                            errDiv.className = 'jenkins-alert jenkins-alert-warning';
+                            errDiv.textContent = i18n.requestFailed + ': ' + err.message;
+                            container.appendChild(errDiv);
+                        });
+                    })();
+
+                    function renderCredentialsTable(credentials) {
+                        var container = document.getElementById('credentials-container');
+                        container.innerHTML = '';
+
+                        var table = document.createElement('table');
+                        table.className = 'jenkins-table jenkins-table--medium sortable';
+                        table.id = 'credentials-table';
+
+                        var thead = document.createElement('thead');
+                        var headRow = document.createElement('tr');
+                        var th1 = document.createElement('th');
+                        th1.textContent = i18n.name;
+                        var th2 = document.createElement('th');
+                        th2.textContent = i18n.encryptedValue;
+                        var th3 = document.createElement('th');
+                        th3.style.textAlign = 'right';
+                        th3.textContent = i18n.actions;
+                        headRow.appendChild(th1);
+                        headRow.appendChild(th2);
+                        headRow.appendChild(th3);
+                        thead.appendChild(headRow);
+                        table.appendChild(thead);
+
+                        var tbody = document.createElement('tbody');
+                        for (var i = 0; i < credentials.length; i++) {
+                            var c = credentials[i];
+                            var row = document.createElement('tr');
+                            row.setAttribute('data-index', c.index);
+
+                            var td1 = document.createElement('td');
+                            td1.textContent = c.name;
+                            row.appendChild(td1);
+
+                            var td2 = document.createElement('td');
+                            var encSpan = document.createElement('span');
+                            encSpan.className = 'encrypted-value';
+                            encSpan.textContent = c.encryptedValue;
+                            td2.appendChild(encSpan);
+                            var decSpan = document.createElement('span');
+                            decSpan.className = 'decrypted-value';
+                            decSpan.id = 'decrypted-' + c.index;
+                            decSpan.style.display = 'none';
+                            decSpan.style.color = '#0d6efd';
+                            decSpan.style.fontWeight = 'bold';
+                            td2.appendChild(decSpan);
+                            row.appendChild(td2);
+
+                            var td3 = document.createElement('td');
+                            td3.style.textAlign = 'right';
+                            var decryptBtn = document.createElement('button');
+                            decryptBtn.className = 'jenkins-button jenkins-button--primary decrypt-btn';
+                            decryptBtn.setAttribute('data-index', c.index);
+                            decryptBtn.textContent = i18n.decrypt;
+                            (function(idx) {
+                                decryptBtn.onclick = function() { decryptCredential(idx); };
+                            })(c.index);
+                            td3.appendChild(decryptBtn);
+                            td3.appendChild(document.createTextNode(' '));
+                            var deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'jenkins-button jenkins-button--danger delete-btn';
+                            deleteBtn.setAttribute('data-name', c.name);
+                            deleteBtn.textContent = i18n.deleteLabel;
+                            (function(name) {
+                                deleteBtn.onclick = function() { deleteCredential(name); };
+                            })(c.name);
+                            td3.appendChild(deleteBtn);
+                            row.appendChild(td3);
+
+                            tbody.appendChild(row);
+                        }
+                        table.appendChild(tbody);
+                        container.appendChild(table);
+                    }
+
+                    function decryptCredential(index) {
                         var btn = document.querySelector('.decrypt-btn[data-index="' + index + '"]');
                         var decryptedSpan = document.getElementById('decrypted-' + index);
                         var encryptedSpan = btn.closest('tr').querySelector('.encrypted-value');
@@ -104,7 +195,7 @@
                         btn.disabled = true;
                         btn.textContent = '...';
 
-                        fetch('encrypted-variables/decrypt', {
+                        fetch(credentialsUrl + 'decrypt', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -144,34 +235,34 @@
                         });
                     }
 
-                    function createVariable() {
+                    function createCredential() {
                         var name = document.getElementById('varName').value.trim();
                         var value = document.getElementById('varValue').value.trim();
 
                         if (!name) {
-                            showMessage(i18n.variableNameRequired, 'error');
+                            showMessage(i18n.credentialNameRequired, 'error');
                             return;
                         }
                         if (!value) {
-                            showMessage(i18n.variableValueRequired, 'error');
+                            showMessage(i18n.credentialValueRequired, 'error');
                             return;
                         }
 
                         var createBtn = event.target;
                         createBtn.disabled = true;
 
-                        fetch('encrypted-variables/create', {
+                        fetch(credentialsUrl + 'create', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'name=' + encodeURIComponent(name) + '&amp;value=' + encodeURIComponent(value)
+                            body: 'name=' + encodeURIComponent(name) + '&value=' + encodeURIComponent(value)
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
                             if (data.success) {
-                                showMessage(i18n.variableCreated, 'success');
+                                showMessage(i18n.credentialCreated, 'success');
                                 setTimeout(function() { window.location.reload(); }, 1000);
                             } else {
                                 showMessage(data.message || i18n.creationFailed, 'error');
@@ -184,12 +275,12 @@
                         });
                     }
 
-                    function deleteVariable(name) {
+                    function deleteCredential(name) {
                         if (!confirm(i18n.confirmDelete + ': ' + name + '?')) {
                             return;
                         }
 
-                        fetch('encrypted-variables/delete', {
+                        fetch(credentialsUrl + 'delete', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -200,7 +291,7 @@
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
                             if (data.success) {
-                                showMessage(i18n.variableDeleted, 'success');
+                                showMessage(i18n.credentialDeleted, 'success');
                                 setTimeout(function() { window.location.reload(); }, 1000);
                             } else {
                                 showMessage(i18n.failedToDelete, 'error');
@@ -220,6 +311,7 @@
                             area.style.display = 'none';
                         }, 5000);
                     }
+                //]]>
                 </script>
             </st:once>
         </l:main-panel>

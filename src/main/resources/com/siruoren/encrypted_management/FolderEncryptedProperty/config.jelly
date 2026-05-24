@@ -1,7 +1,7 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:st="jelly:stapler">
-    <f:section title="${%Encrypted Variables}">
-        <f:repeatable var="variable" items="${instance.variables}" add="${%Add Variable}">
+    <f:section title="${%Credentials}">
+        <f:repeatable var="variable" items="${instance.variables}" add="${%Add Credential}">
             <table width="100%">
                 <f:entry title="${%Name}" field="name">
                     <f:textbox value="${variable.name}"/>
