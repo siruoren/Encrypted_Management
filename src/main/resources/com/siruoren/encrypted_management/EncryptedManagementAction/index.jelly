@@ -5,8 +5,13 @@
         <l:main-panel>
             <j:choose>
                 <j:when test="${it.hasPermission()}">
-            <h1>${%Credentials Management}</h1>
-            <p>${%Folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1em;">
+                <div>
+                    <h1>${%Credentials Management}</h1>
+                    <p>${%Folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
+                </div>
+                <a href="api-doc" class="jenkins-button" style="white-space:nowrap;">${%API Docs}</a>
+            </div>
 
             <!-- 操作按钮栏 -->
             <div style="margin-bottom: 1em; display:flex; flex-wrap:wrap; gap:0.5em;">

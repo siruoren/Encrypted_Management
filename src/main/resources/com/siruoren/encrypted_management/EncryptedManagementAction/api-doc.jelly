@@ -1,0 +1,527 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
+    <l:layout title="${%API Documentation} - ${it.folder.displayName}">
+        <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
+        <l:main-panel>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1em;">
+                <h1>${%API Documentation}</h1>
+                <a href="${rootURL}/${it.folder.url}Encrypted_Management/" class="jenkins-button">${%Back to Credentials Management}</a>
+            </div>
+            <p style="color:#666; margin-bottom:1.5em;">${%Base URL}: <code id="api-base-url"></code></p>
+
+            <style>
+                .api-section { margin-bottom: 2em; }
+                .api-section h2 { border-bottom: 2px solid #4b758b; padding-bottom: 0.3em; color: #4b758b; }
+                .api-endpoint { background: #f8f8f8; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 1em; overflow: hidden; }
+                .api-header { display: flex; align-items: center; padding: 0.8em 1em; cursor: pointer; }
+                .api-header:hover { background: #f0f0f0; }
+                .api-method { font-weight: bold; padding: 0.2em 0.6em; border-radius: 3px; color: #fff; font-size: 0.85em; margin-right: 0.8em; min-width: 60px; text-align: center; }
+                .method-post { background: #49cc90; }
+                .method-get { background: #61affe; }
+                .api-path { font-family: monospace; font-size: 0.95em; color: #333; }
+                .api-summary { margin-left: auto; color: #888; font-size: 0.9em; }
+                .api-detail { padding: 1em; border-top: 1px solid #ddd; display: none; }
+                .api-detail.open { display: block; }
+                .api-detail table { width: 100%; border-collapse: collapse; margin: 0.5em 0; }
+                .api-detail th, .api-detail td { padding: 0.4em 0.8em; border: 1px solid #ddd; text-align: left; font-size: 0.9em; }
+                .api-detail th { background: #eee; width: 120px; }
+                .api-detail pre { background: #f0f0f0; padding: 0.8em; border-radius: 4px; font-size: 0.85em; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+                .api-desc { color: #555; font-size: 0.9em; margin-bottom: 0.5em; }
+                .param-required { color: #e74c3c; font-weight: bold; font-size: 0.8em; }
+                .param-optional { color: #999; font-size: 0.8em; }
+                .try-btn { margin-top: 0.5em; }
+                .try-result { margin-top: 0.5em; display: none; }
+                .try-result pre { max-height: 300px; overflow-y: auto; }
+            </style>
+
+            <!-- ==================== Credentials API ==================== -->
+            <div class="api-section">
+                <h2>${%Credentials}</h2>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-get">GET</span>
+                        <span class="api-path">listCredentials</span>
+                        <span class="api-summary">${%List all credentials}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Returns all credentials in the current folder with their metadata.}</div>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "credentials": [
+    {
+      "id": "credential-id",
+      "description": "description",
+      "type": "Username with password",
+      "typeKey": "USERNAME_PASSWORD",
+      "username": "admin"
+    }
+  ],
+  "folder": "folder-name",
+  "count": 1
+}</pre>
+                        <div class="try-btn">
+                            <button class="jenkins-button" onclick="tryApi('listCredentials', 'GET')">${%Try it}</button>
+                        </div>
+                        <div class="try-result" id="result-listCredentials">
+                            <pre></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">decryptCredential</span>
+                        <span class="api-summary">${%Decrypt a credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Decrypt and return the secret values of a specified credential.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                        </table>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "id": "credential-id",
+  "type": "Username with password",
+  "typeKey": "USERNAME_PASSWORD",
+  "username": "admin",
+  "password": "secret-value"
+}</pre>
+                        <div class="try-btn">
+                            <input type="text" id="param-decryptCredential-id" class="jenkins-input" placeholder="Credential ID" style="width:200px; margin-right:0.5em;"/>
+                            <button class="jenkins-button" onclick="tryApi('decryptCredential', 'POST', {id: document.getElementById('param-decryptCredential-id').value})">${%Try it}</button>
+                        </div>
+                        <div class="try-result" id="result-decryptCredential"><pre></pre></div>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">createSecretText</span>
+                        <span class="api-summary">${%Create Secret Text credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Create a new Secret Text credential in the folder.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Credential ID (auto-generated if empty)}</td></tr>
+                            <tr><th>description</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Description}</td></tr>
+                            <tr><th>secret</th><td><span class="param-required">REQUIRED</span></td><td>${%Secret value}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">createUsernamePassword</span>
+                        <span class="api-summary">${%Create Username/Password credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Create a new Username with Password credential in the folder.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Credential ID}</td></tr>
+                            <tr><th>description</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Description}</td></tr>
+                            <tr><th>username</th><td><span class="param-required">REQUIRED</span></td><td>${%Username}</td></tr>
+                            <tr><th>password</th><td><span class="param-required">REQUIRED</span></td><td>${%Password}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">createSSHKey</span>
+                        <span class="api-summary">${%Create SSH Key credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Create a new SSH Username with Private Key credential in the folder.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Credential ID}</td></tr>
+                            <tr><th>description</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Description}</td></tr>
+                            <tr><th>username</th><td><span class="param-required">REQUIRED</span></td><td>${%Username}</td></tr>
+                            <tr><th>passphrase</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Passphrase for the private key}</td></tr>
+                            <tr><th>privateKey</th><td><span class="param-required">REQUIRED</span></td><td>${%Private key content}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">updateSecretText</span>
+                        <span class="api-summary">${%Update Secret Text credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Update an existing Secret Text credential.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                            <tr><th>description</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New description}</td></tr>
+                            <tr><th>secret</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New secret value (keep current if empty)}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">updateUsernamePassword</span>
+                        <span class="api-summary">${%Update Username/Password credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Update an existing Username with Password credential.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                            <tr><th>description</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New description}</td></tr>
+                            <tr><th>username</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New username}</td></tr>
+                            <tr><th>password</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New password}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">updateSSHKey</span>
+                        <span class="api-summary">${%Update SSH Key credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Update an existing SSH Username with Private Key credential.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                            <tr><th>description</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New description}</td></tr>
+                            <tr><th>username</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New username}</td></tr>
+                            <tr><th>passphrase</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New passphrase}</td></tr>
+                            <tr><th>privateKey</th><td><span class="param-optional">OPTIONAL</span></td><td>${%New private key}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">deleteCredential</span>
+                        <span class="api-summary">${%Delete a credential}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Delete a credential from the folder.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>id</th><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID to delete}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">generateKeyPair</span>
+                        <span class="api-summary">${%Generate SSH key pair}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Generate a new RSA 2048 key pair. If passphrase is provided, the private key will be encrypted.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>passphrase</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Passphrase to encrypt the private key}</td></tr>
+                        </table>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "data": {
+    "privateKey": "-----BEGIN PRIVATE KEY-----...",
+    "publicKey": "ssh-rsa AAAA..."
+  }
+}</pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== Audit Log API ==================== -->
+            <div class="api-section">
+                <h2>${%Audit Log}</h2>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">auditLog</span>
+                        <span class="api-summary">${%Query audit logs}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Retrieve recent audit log entries.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>limit</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Max entries to return (default 100, max 1000)}</td></tr>
+                        </table>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "logs": ["[2025-01-01 12:00:00.000] user=admin folder=... action=CREATE ..."],
+  "count": 1,
+  "maxRetentionDays": 30
+}</pre>
+                        <div class="try-btn">
+                            <button class="jenkins-button" onclick="tryApi('auditLog', 'POST', {limit: '10'})">${%Try it}</button>
+                        </div>
+                        <div class="try-result" id="result-auditLog"><pre></pre></div>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">configureAuditLog</span>
+                        <span class="api-summary">${%Configure audit log retention}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Set the maximum number of days to retain audit log files.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>maxRetentionDays</th><td><span class="param-required">REQUIRED</span></td><td>${%Max retention days (1-365)}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== Backup API ==================== -->
+            <div class="api-section">
+                <h2>${%Backup &amp; Restore}</h2>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">exportCredentials</span>
+                        <span class="api-summary">${%Export credentials as encrypted text}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Export all credentials as AES-256-GCM encrypted text data.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>password</th><td><span class="param-required">REQUIRED</span></td><td>${%Encryption password (min 8 characters)}</td></tr>
+                        </table>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "data": "base64-encrypted-data...",
+  "folder": "folder-name",
+  "message": "Credentials exported successfully."
+}</pre>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">exportCredentialsFile</span>
+                        <span class="api-summary">${%Export credentials as encrypted file download}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Export all credentials as an AES-256-GCM encrypted file (.enc) for download.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>password</th><td><span class="param-required">REQUIRED</span></td><td>${%Encryption password (min 8 characters)}</td></tr>
+                        </table>
+                        <h4>${%Response}</h4>
+                        <pre>${%Binary file download: credentials-backup-{folder}-{timestamp}.enc}</pre>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">importCredentials</span>
+                        <span class="api-summary">${%Import credentials from encrypted data}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Import credentials from AES-256-GCM encrypted text data.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>password</th><td><span class="param-required">REQUIRED</span></td><td>${%Decryption password}</td></tr>
+                            <tr><th>data</th><td><span class="param-required">REQUIRED</span></td><td>${%Encrypted backup data}</td></tr>
+                            <tr><th>overwrite</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Overwrite existing credentials (true/false)}</td></tr>
+                        </table>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "importResult": { "imported": 2, "updated": 0, "skipped": 1, "failed": 0 },
+  "message": "Credentials imported successfully"
+}</pre>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">importCredentialsFile</span>
+                        <span class="api-summary">${%Import credentials from uploaded file}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Import credentials from an uploaded encrypted backup file.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>password</th><td><span class="param-required">REQUIRED</span></td><td>${%Decryption password}</td></tr>
+                            <tr><th>data</th><td><span class="param-required">REQUIRED</span></td><td>${%File content as text}</td></tr>
+                            <tr><th>overwrite</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Overwrite existing credentials}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== External Storage API ==================== -->
+            <div class="api-section">
+                <h2>${%External Storage}</h2>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">storageStatus</span>
+                        <span class="api-summary">${%Get external storage status}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Get the current status and configuration of the external storage backend.}</div>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "enabled": true,
+  "syncMode": "MANUAL",
+  "storageType": "FILE",
+  "connected": true,
+  "encrypted": true,
+  "storagePath": "/custom/path",
+  "configInfo": { "type": "FILE", "path": "/custom/path", "writable": true, "encrypted": true }
+}</pre>
+                        <div class="try-btn">
+                            <button class="jenkins-button" onclick="tryApi('storageStatus', 'POST')">${%Try it}</button>
+                        </div>
+                        <div class="try-result" id="result-storageStatus"><pre></pre></div>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">configureStorage</span>
+                        <span class="api-summary">${%Configure external storage}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Configure the external storage backend settings.}</div>
+                        <h4>${%Parameters}</h4>
+                        <table>
+                            <tr><th>enabled</th><td><span class="param-required">REQUIRED</span></td><td>${%Enable/disable external storage (true/false)}</td></tr>
+                            <tr><th>syncMode</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Sync mode: MANUAL / AUTO_SYNC / EXTERNAL_ONLY}</td></tr>
+                            <tr><th>storagePath</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Custom storage path (leave empty for default)}</td></tr>
+                            <tr><th>encryptionPassword</th><td><span class="param-optional">OPTIONAL</span></td><td>${%Password for AES-256-GCM encryption}</td></tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">testStorageConnection</span>
+                        <span class="api-summary">${%Test storage connection}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Test the connection to the external storage backend.}</div>
+                        <h4>${%Response}</h4>
+                        <pre>{ "success": true, "connected": true }</pre>
+                        <div class="try-btn">
+                            <button class="jenkins-button" onclick="tryApi('testStorageConnection', 'POST')">${%Try it}</button>
+                        </div>
+                        <div class="try-result" id="result-testStorageConnection"><pre></pre></div>
+                    </div>
+                </div>
+
+                <div class="api-endpoint">
+                    <div class="api-header" onclick="toggleDetail(this)">
+                        <span class="api-method method-post">POST</span>
+                        <span class="api-path">syncToExternal</span>
+                        <span class="api-summary">${%Sync credentials to external storage}</span>
+                    </div>
+                    <div class="api-detail">
+                        <div class="api-desc">${%Asynchronously sync all credentials to the external storage backend.}</div>
+                        <h4>${%Response}</h4>
+                        <pre>{
+  "success": true,
+  "message": "Sync started in background for 5 credentials"
+}</pre>
+                        <div class="try-btn">
+                            <button class="jenkins-button" onclick="tryApi('syncToExternal', 'POST')">${%Try it}</button>
+                        </div>
+                        <div class="try-result" id="result-syncToExternal"><pre></pre></div>
+                    </div>
+                </div>
+            </div>
+
+            <st:once>
+                <script type="text/javascript">
+                //<![CDATA[
+                    var baseUrl = document.location.href.replace(/api-doc\/?$/, '');
+                    document.getElementById('api-base-url').textContent = baseUrl;
+
+                    function toggleDetail(header) {
+                        var detail = header.nextElementSibling;
+                        detail.classList.toggle('open');
+                    }
+
+                    function tryApi(endpoint, method, params) {
+                        var url = baseUrl + endpoint;
+                        var crumbHeaderName = document.head.getAttribute('data-crumb-header') || 'Jenkins-Crumb';
+                        var crumbValue = document.head.getAttribute('data-crumb-value') || '';
+                        var fetchOptions = {
+                            method: method,
+                            headers: {}
+                        };
+                        if (crumbValue) {
+                            fetchOptions.headers[crumbHeaderName] = crumbValue;
+                        }
+                        if (method === 'POST' && params) {
+                            fetchOptions.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                            var bodyParts = [];
+                            for (var key in params) {
+                                if (params[key]) {
+                                    bodyParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+                                }
+                            }
+                            fetchOptions.body = bodyParts.join('&');
+                        }
+
+                        var resultDiv = document.getElementById('result-' + endpoint);
+                        if (resultDiv) {
+                            resultDiv.style.display = 'block';
+                            resultDiv.querySelector('pre').textContent = '${%Loading...}';
+                        }
+
+                        fetch(url, fetchOptions)
+                            .then(function(r) { return r.text(); })
+                            .then(function(text) {
+                                if (resultDiv) {
+                                    try {
+                                        var json = JSON.parse(text);
+                                        resultDiv.querySelector('pre').textContent = JSON.stringify(json, null, 2);
+                                    } catch(e) {
+                                        resultDiv.querySelector('pre').textContent = text;
+                                    }
+                                }
+                            })
+                            .catch(function(err) {
+                                if (resultDiv) {
+                                    resultDiv.querySelector('pre').textContent = 'Error: ' + err.message;
+                                }
+                            });
+                    }
+                //]]>
+                </script>
+            </st:once>
+        </l:main-panel>
+    </l:layout>
+</j:jelly>
