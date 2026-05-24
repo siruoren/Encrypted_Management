@@ -11,7 +11,6 @@ import hudson.Extension;
 import hudson.model.Action;
 import hudson.model.Item;
 import com.siruoren.encrypted_management.model.ModelEntry;
-import com.siruoren.encrypted_management.service.AsyncTaskService;
 import com.siruoren.encrypted_management.service.EncryptedVariableService;
 import com.siruoren.encrypted_management.service.SshKeyGenerator;
 import com.siruoren.encrypted_management.validator.VariableNameValidator;
@@ -32,7 +31,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.Future;
+
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -155,11 +154,14 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doCreateEntry(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String typeStr = form.optString("type", "SECRET_TEXT");
-        String value = form.optString("secretValue", "");
-        String description = form.optString("description", "");
+        String nameParam = req.getParameter("name");
+        String typeStrParam = req.getParameter("type");
+        String valueParam = req.getParameter("secretValue");
+        String descriptionParam = req.getParameter("description");
+        final String name = nameParam != null ? nameParam : "";
+        final String typeStr = typeStrParam != null ? typeStrParam : "SECRET_TEXT";
+        final String value = valueParam != null ? valueParam : "";
+        final String description = descriptionParam != null ? descriptionParam : "";
 
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
         if (!validation.isValid()) {
@@ -188,7 +190,8 @@ public class FolderEncryptedAction implements Action {
                 entry.setSecretValue(hudson.util.Secret.fromString(value));
                 break;
             case USERNAME_PASSWORD:
-                String username = form.optString("username", "");
+                String usernameParam = req.getParameter("username");
+                final String username = usernameParam != null ? usernameParam : "";
                 entry.setUsername(username);
                 entry.setSecretValue(hudson.util.Secret.fromString(value));
                 break;
@@ -201,13 +204,8 @@ public class FolderEncryptedAction implements Action {
                 entry.setSecretValue(hudson.util.Secret.fromString(value));
         }
 
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            EncryptedVariableService.getInstance().saveEntry(entry);
-            return true;
-        });
-
         try {
-            future.get();
+            EncryptedVariableService.getInstance().saveEntry(entry);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to save encrypted variable", e);
             return errorResponse(Messages.EncryptedManagementLink_saveFailed(e.getMessage()));
@@ -224,12 +222,17 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doGenerateSshKeyPreview(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        int keySize = form.optInt("keySize", 4096);
-        String comment = form.optString("comment", "");
-        String description = form.optString("description", "");
-        String passphrase = form.optString("passphrase", "");
+        String nameParam = req.getParameter("name");
+        String keySizeStr = req.getParameter("keySize");
+        String commentParam = req.getParameter("comment");
+        String descriptionParam = req.getParameter("description");
+        String passphraseParam = req.getParameter("passphrase");
+        final String name = nameParam != null ? nameParam : "";
+        final String comment = commentParam != null ? commentParam : "";
+        final String description = descriptionParam != null ? descriptionParam : "";
+        final String passphrase = passphraseParam != null ? passphraseParam : "";
+        int keySize = 4096;
+        try { keySize = Integer.parseInt(keySizeStr); } catch (Exception e) {}
 
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
         if (!validation.isValid()) {
@@ -272,14 +275,21 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doSaveSshKey(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String privateKey = form.optString("privateKey", "");
-        String publicKey = form.optString("publicKey", "");
-        String passphrase = form.optString("passphrase", "");
-        String description = form.optString("description", "");
-        int keySize = form.optInt("keySize", 4096);
-        String comment = form.optString("comment", "");
+        String nameParam = req.getParameter("name");
+        String privateKeyParam = req.getParameter("privateKey");
+        String publicKeyParam = req.getParameter("publicKey");
+        String passphraseParam = req.getParameter("passphrase");
+        String descriptionParam = req.getParameter("description");
+        String keySizeStr = req.getParameter("keySize");
+        String commentParam = req.getParameter("comment");
+        final String name = nameParam != null ? nameParam : "";
+        final String privateKey = privateKeyParam != null ? privateKeyParam : "";
+        final String publicKey = publicKeyParam != null ? publicKeyParam : "";
+        final String passphrase = passphraseParam != null ? passphraseParam : "";
+        final String description = descriptionParam != null ? descriptionParam : "";
+        final String comment = commentParam != null ? commentParam : "";
+        int keySize = 4096;
+        try { keySize = Integer.parseInt(keySizeStr); } catch (Exception e) {}
 
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
         if (!validation.isValid()) {
@@ -306,13 +316,8 @@ public class FolderEncryptedAction implements Action {
         }
         entry.setFolderFullName(folder.getFullName());
 
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            EncryptedVariableService.getInstance().saveEntry(entry);
-            return true;
-        });
-
         try {
-            future.get();
+            EncryptedVariableService.getInstance().saveEntry(entry);
             return successResponse(Messages.EncryptedManagementLink_sshKeyGenerated(name));
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to save SSH key pair", e);
@@ -327,11 +332,16 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doGenerateSshKey(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        int keySize = form.optInt("keySize", 4096);
-        String comment = form.optString("comment", "");
-        String description = form.optString("description", "");
+        String nameParam = req.getParameter("name");
+        String keySizeStr = req.getParameter("keySize");
+        String commentParam = req.getParameter("comment");
+        String descriptionParam = req.getParameter("description");
+        final String name = nameParam != null ? nameParam : "";
+        final String comment = commentParam != null ? commentParam : "";
+        final String description = descriptionParam != null ? descriptionParam : "";
+        int keySizeTmp = 4096;
+        try { keySizeTmp = Integer.parseInt(keySizeStr); } catch (Exception e) {}
+        final int keySize = keySizeTmp;
 
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
         if (!validation.isValid()) {
@@ -346,14 +356,9 @@ public class FolderEncryptedAction implements Action {
             return errorResponse(Messages.EncryptedManagementLink_invalidKeySize());
         }
 
-        Future<ModelEntry> future = AsyncTaskService.getInstance().submit(() -> {
+        try {
             ModelEntry entry = SshKeyGenerator.generateKeyPairJsch(name, keySize, comment, description, folder.getFullName());
             EncryptedVariableService.getInstance().saveEntry(entry);
-            return entry;
-        });
-
-        try {
-            future.get();
             return successResponse(Messages.EncryptedManagementLink_sshKeyGenerated(name));
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair", e);
@@ -368,16 +373,19 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doUpdateEntry(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
+        String nameParam = req.getParameter("name");
+        if (nameParam == null) nameParam = "";
+        final String name = nameParam;
 
         ModelEntry existing = EncryptedVariableService.getInstance().getEntry(folder.getFullName(), name);
         if (existing == null) {
             return errorResponse(Messages.EncryptedManagementLink_entryNotFound(name));
         }
 
-        String value = form.optString("secretValue", "");
-        String description = form.optString("description", "");
+        String value = req.getParameter("secretValue");
+        String description = req.getParameter("description");
+        if (value == null) value = "";
+        if (description == null) description = "";
 
         if (!value.isEmpty()) {
             existing.setSecretValue(hudson.util.Secret.fromString(value));
@@ -385,17 +393,13 @@ public class FolderEncryptedAction implements Action {
         existing.setDescription(description);
 
         if (existing.getType() == ModelEntry.EntryType.USERNAME_PASSWORD) {
-            String username = form.optString("username", "");
+            String username = req.getParameter("username");
+            if (username == null) username = "";
             existing.setUsername(username);
         }
 
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            EncryptedVariableService.getInstance().saveEntry(existing);
-            return true;
-        });
-
         try {
-            future.get();
+            EncryptedVariableService.getInstance().saveEntry(existing);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to update encrypted variable", e);
             return errorResponse(Messages.EncryptedManagementLink_updateFailed(e.getMessage()));
@@ -411,15 +415,12 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doDeleteEntry(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            return EncryptedVariableService.getInstance().deleteEntry(folder.getFullName(), name);
-        });
+        String nameParam = req.getParameter("name");
+        if (nameParam == null) nameParam = "";
+        String name = nameParam;
 
         try {
-            Boolean result = future.get();
+            boolean result = EncryptedVariableService.getInstance().deleteEntry(folder.getFullName(), name);
             if (result) {
                 return successResponse(Messages.EncryptedManagementLink_entryDeleted(name));
             } else {
@@ -438,8 +439,9 @@ public class FolderEncryptedAction implements Action {
     public HttpResponse doDecryptValue(StaplerRequest req) throws IOException, ServletException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
+        String nameParam = req.getParameter("name");
+        if (nameParam == null) nameParam = "";
+        final String name = nameParam;
 
         ModelEntry entry = EncryptedVariableService.getInstance().getEntry(folder.getFullName(), name);
         if (entry == null) {

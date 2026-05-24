@@ -5,7 +5,6 @@ import hudson.Extension;
 import hudson.model.Item;
 import hudson.model.ManagementLink;
 import com.siruoren.encrypted_management.model.ModelEntry;
-import com.siruoren.encrypted_management.service.AsyncTaskService;
 import com.siruoren.encrypted_management.service.EncryptedVariableService;
 import com.siruoren.encrypted_management.service.SshKeyGenerator;
 import com.siruoren.encrypted_management.validator.VariableNameValidator;
@@ -23,7 +22,7 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.Future;
+
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -99,12 +98,16 @@ public class EncryptedManagementLink extends ManagementLink {
     public HttpResponse doCreateEntry(StaplerRequest req) throws IOException, ServletException {
         Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String typeStr = form.optString("type", "SECRET_TEXT");
-        String value = form.optString("secretValue", "");
-        String description = form.optString("description", "");
-        String folderFullName = form.optString("folderFullName", "");
+        String name = req.getParameter("name");
+        String typeStr = req.getParameter("type");
+        String value = req.getParameter("secretValue");
+        String description = req.getParameter("description");
+        String folderFullName = req.getParameter("folderFullName");
+        if (name == null) name = "";
+        if (typeStr == null) typeStr = "SECRET_TEXT";
+        if (value == null) value = "";
+        if (description == null) description = "";
+        if (folderFullName == null) folderFullName = "";
 
         // Validate variable name
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
@@ -135,7 +138,8 @@ public class EncryptedManagementLink extends ManagementLink {
                 entry.setSecretValue(hudson.util.Secret.fromString(value));
                 break;
             case USERNAME_PASSWORD:
-                String username = form.optString("username", "");
+                String username = req.getParameter("username");
+                if (username == null) username = "";
                 entry.setUsername(username);
                 entry.setSecretValue(hudson.util.Secret.fromString(value));
                 break;
@@ -149,14 +153,8 @@ public class EncryptedManagementLink extends ManagementLink {
                 entry.setSecretValue(hudson.util.Secret.fromString(value));
         }
 
-        // Submit async task
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            EncryptedVariableService.getInstance().saveEntry(entry);
-            return true;
-        });
-
         try {
-            future.get(); // Wait for completion
+            EncryptedVariableService.getInstance().saveEntry(entry);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to save encrypted variable", e);
             return errorResponse(Messages.EncryptedManagementLink_saveFailed(e.getMessage()));
@@ -173,13 +171,19 @@ public class EncryptedManagementLink extends ManagementLink {
     public HttpResponse doGenerateSshKeyPreview(StaplerRequest req) throws IOException, ServletException {
         Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        int keySize = form.optInt("keySize", 4096);
-        String comment = form.optString("comment", "");
-        String description = form.optString("description", "");
-        String folderFullName = form.optString("folderFullName", "");
-        String passphrase = form.optString("passphrase", "");
+        String name = req.getParameter("name");
+        String keySizeStr = req.getParameter("keySize");
+        String comment = req.getParameter("comment");
+        String description = req.getParameter("description");
+        String folderFullName = req.getParameter("folderFullName");
+        String passphrase = req.getParameter("passphrase");
+        if (name == null) name = "";
+        if (comment == null) comment = "";
+        if (description == null) description = "";
+        if (folderFullName == null) folderFullName = "";
+        if (passphrase == null) passphrase = "";
+        int keySize = 4096;
+        try { keySize = Integer.parseInt(keySizeStr); } catch (Exception e) {}
 
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
         if (!validation.isValid()) {
@@ -223,15 +227,23 @@ public class EncryptedManagementLink extends ManagementLink {
     public HttpResponse doSaveSshKey(StaplerRequest req) throws IOException, ServletException {
         Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String privateKey = form.optString("privateKey", "");
-        String publicKey = form.optString("publicKey", "");
-        String passphrase = form.optString("passphrase", "");
-        String description = form.optString("description", "");
-        String folderFullName = form.optString("folderFullName", "");
-        int keySize = form.optInt("keySize", 4096);
-        String comment = form.optString("comment", "");
+        String name = req.getParameter("name");
+        String privateKey = req.getParameter("privateKey");
+        String publicKey = req.getParameter("publicKey");
+        String passphrase = req.getParameter("passphrase");
+        String description = req.getParameter("description");
+        String folderFullName = req.getParameter("folderFullName");
+        String keySizeStr = req.getParameter("keySize");
+        String comment = req.getParameter("comment");
+        if (name == null) name = "";
+        if (privateKey == null) privateKey = "";
+        if (publicKey == null) publicKey = "";
+        if (passphrase == null) passphrase = "";
+        if (description == null) description = "";
+        if (folderFullName == null) folderFullName = "";
+        if (comment == null) comment = "";
+        int keySize = 4096;
+        try { keySize = Integer.parseInt(keySizeStr); } catch (Exception e) {}
 
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
         if (!validation.isValid()) {
@@ -257,13 +269,8 @@ public class EncryptedManagementLink extends ManagementLink {
         }
         entry.setFolderFullName(folderFullName);
 
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            EncryptedVariableService.getInstance().saveEntry(entry);
-            return true;
-        });
-
         try {
-            future.get();
+            EncryptedVariableService.getInstance().saveEntry(entry);
             return successResponse(Messages.EncryptedManagementLink_sshKeyGenerated(name));
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to save SSH key pair", e);
@@ -278,12 +285,18 @@ public class EncryptedManagementLink extends ManagementLink {
     public HttpResponse doGenerateSshKey(StaplerRequest req) throws IOException, ServletException {
         Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        int keySize = form.optInt("keySize", 4096);
-        String comment = form.optString("comment", "");
-        String description = form.optString("description", "");
-        String folderFullName = form.optString("folderFullName", "");
+        String nameParam = req.getParameter("name");
+        String keySizeStr = req.getParameter("keySize");
+        String commentParam = req.getParameter("comment");
+        String descriptionParam = req.getParameter("description");
+        String folderFullNameParam = req.getParameter("folderFullName");
+        final String name = nameParam != null ? nameParam : "";
+        final String comment = commentParam != null ? commentParam : "";
+        final String description = descriptionParam != null ? descriptionParam : "";
+        final String folderFullName = folderFullNameParam != null ? folderFullNameParam : "";
+        int keySizeTmp = 4096;
+        try { keySizeTmp = Integer.parseInt(keySizeStr); } catch (Exception e) {}
+        final int keySize = keySizeTmp;
 
         // Validate variable name
         VariableNameValidator.ValidationResult validation = VariableNameValidator.validate(name);
@@ -301,14 +314,9 @@ public class EncryptedManagementLink extends ManagementLink {
             return errorResponse(Messages.EncryptedManagementLink_invalidKeySize());
         }
 
-        Future<ModelEntry> future = AsyncTaskService.getInstance().submit(() -> {
+        try {
             ModelEntry entry = SshKeyGenerator.generateKeyPairJsch(name, keySize, comment, description, folderFullName);
             EncryptedVariableService.getInstance().saveEntry(entry);
-            return entry;
-        });
-
-        try {
-            ModelEntry entry = future.get();
             return successResponse(Messages.EncryptedManagementLink_sshKeyGenerated(name));
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair", e);
@@ -321,9 +329,10 @@ public class EncryptedManagementLink extends ManagementLink {
      */
     @RequirePOST
     public HttpResponse doUpdateEntry(StaplerRequest req) throws IOException, ServletException {
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String folderFullName = form.optString("folderFullName", "");
+        String name = req.getParameter("name");
+        String folderFullName = req.getParameter("folderFullName");
+        if (name == null) name = "";
+        if (folderFullName == null) folderFullName = "";
 
         // Verify permission for the folder
         if (!checkFolderPermission(folderFullName)) {
@@ -335,8 +344,10 @@ public class EncryptedManagementLink extends ManagementLink {
             return errorResponse(Messages.EncryptedManagementLink_entryNotFound(name));
         }
 
-        String value = form.optString("secretValue", "");
-        String description = form.optString("description", "");
+        String value = req.getParameter("secretValue");
+        String description = req.getParameter("description");
+        if (value == null) value = "";
+        if (description == null) description = "";
 
         if (!value.isEmpty()) {
             existing.setSecretValue(hudson.util.Secret.fromString(value));
@@ -344,17 +355,13 @@ public class EncryptedManagementLink extends ManagementLink {
         existing.setDescription(description);
 
         if (existing.getType() == ModelEntry.EntryType.USERNAME_PASSWORD) {
-            String username = form.optString("username", "");
+            String username = req.getParameter("username");
+            if (username == null) username = "";
             existing.setUsername(username);
         }
 
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            EncryptedVariableService.getInstance().saveEntry(existing);
-            return true;
-        });
-
         try {
-            future.get();
+            EncryptedVariableService.getInstance().saveEntry(existing);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to update encrypted variable", e);
             return errorResponse(Messages.EncryptedManagementLink_updateFailed(e.getMessage()));
@@ -368,21 +375,18 @@ public class EncryptedManagementLink extends ManagementLink {
      */
     @RequirePOST
     public HttpResponse doDeleteEntry(StaplerRequest req) throws IOException, ServletException {
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String folderFullName = form.optString("folderFullName", "");
+        String nameParam = req.getParameter("name");
+        String folderFullNameParam = req.getParameter("folderFullName");
+        final String name = nameParam != null ? nameParam : "";
+        final String folderFullName = folderFullNameParam != null ? folderFullNameParam : "";
 
         // Verify permission for the folder
         if (!checkFolderPermission(folderFullName)) {
             return errorResponse(Messages.EncryptedManagementLink_noPermission());
         }
 
-        Future<Boolean> future = AsyncTaskService.getInstance().submit(() -> {
-            return EncryptedVariableService.getInstance().deleteEntry(folderFullName, name);
-        });
-
         try {
-            Boolean result = future.get();
+            boolean result = EncryptedVariableService.getInstance().deleteEntry(folderFullName, name);
             if (result) {
                 return successResponse(Messages.EncryptedManagementLink_entryDeleted(name));
             } else {
@@ -399,9 +403,10 @@ public class EncryptedManagementLink extends ManagementLink {
      */
     @RequirePOST
     public HttpResponse doDecryptValue(StaplerRequest req) throws IOException, ServletException {
-        JSONObject form = req.getSubmittedForm();
-        String name = form.optString("name", "");
-        String folderFullName = form.optString("folderFullName", "");
+        String name = req.getParameter("name");
+        String folderFullName = req.getParameter("folderFullName");
+        if (name == null) name = "";
+        if (folderFullName == null) folderFullName = "";
 
         if (!checkFolderPermission(folderFullName)) {
             return errorResponse(Messages.EncryptedManagementLink_noPermission());

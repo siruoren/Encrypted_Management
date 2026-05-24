@@ -149,15 +149,24 @@ public class EncryptedVariableService {
 
         try {
             XmlFile xmlFile = new XmlFile(Jenkins.XSTREAM, file);
-            List<ModelEntry> list = new ArrayList<>();
-            xmlFile.unmarshal(list);
-            for (ModelEntry entry : list) {
-                if (entry.getName() != null) {
-                    entries.put(entry.getName(), entry);
+            if (xmlFile.exists()) {
+                Object obj = xmlFile.unmarshal(null);
+                if (obj instanceof List) {
+                    List<?> list = (List<?>) obj;
+                    for (Object item : list) {
+                        if (item instanceof ModelEntry) {
+                            ModelEntry entry = (ModelEntry) item;
+                            if (entry.getName() != null) {
+                                entries.put(entry.getName(), entry);
+                            }
+                        }
+                    }
                 }
             }
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Failed to load encrypted variables for folder: " + folderFullName, e);
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to deserialize encrypted variables for folder: " + folderFullName, e);
         }
         return entries;
     }

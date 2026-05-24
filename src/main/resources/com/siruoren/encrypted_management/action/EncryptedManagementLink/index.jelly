@@ -92,7 +92,7 @@
                 <div class="em-modal-content">
                     <span class="em-modal-close" onclick="closeCreateModal()">&amp;times;</span>
                     <h2>${%createVariable}</h2>
-                    <form id="createForm" onsubmit="return submitCreateForm(event)">
+                    <form id="createForm" onsubmit="submitCreateForm(event); return false;">
                         <div class="em-form-group">
                             <label>${%variableName}</label>
                             <input type="text" id="createName" name="name" required="" pattern="[a-zA-Z_][a-zA-Z0-9_-]*" maxlength="255"/>
@@ -132,7 +132,7 @@
                 <div class="em-modal-content">
                     <span class="em-modal-close" onclick="closeSshKeyModal()">&amp;times;</span>
                     <h2>${%generateSshKey}</h2>
-                    <form id="sshKeyForm" onsubmit="return submitSshKeyPreview(event)">
+                    <form id="sshKeyForm" onsubmit="submitSshKeyPreview(event); return false;">
                         <div class="em-form-group">
                             <label>${%variableName}</label>
                             <input type="text" id="sshKeyName" name="name" required="" pattern="[a-zA-Z_][a-zA-Z0-9_-]*" maxlength="255"/>
@@ -188,7 +188,7 @@
                 <div class="em-modal-content">
                     <span class="em-modal-close" onclick="closeUpdateModal()">&amp;times;</span>
                     <h2>${%updateVariable}</h2>
-                    <form id="updateForm" onsubmit="return submitUpdateForm(event)">
+                    <form id="updateForm" onsubmit="submitUpdateForm(event); return false;">
                         <input type="hidden" id="updateName" name="name"/>
                         <input type="hidden" id="updateType" name="type"/>
                         <div class="em-form-group">
@@ -546,22 +546,40 @@
                 function submitAction(url, formData, onSuccess, onError) {
                     var xhr = new XMLHttpRequest();
                     xhr.open('POST', url, true);
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
                     if (crumbValue) {
                         xhr.setRequestHeader(getCrumbHeaderName(), crumbValue);
+                        if (formData instanceof FormData) {
+                            formData.append(getCrumbHeaderName(), crumbValue);
+                        }
                     }
                     xhr.onreadystatechange = function() {
                         if (xhr.readyState === 4) {
+                            var responseText = xhr.responseText || '';
+                            var isHtml = responseText.trim().charAt(0) === '<' ||
+                                         responseText.indexOf('<!DOCTYPE') >= 0 ||
+                                         responseText.indexOf('<html') >= 0;
+                            if (xhr.status === 0 || isHtml) {
+                                showNotification('${%requestFailed}', 'error');
+                                if (onError) onError('${%requestFailed}');
+                                return;
+                            }
                             try {
-                                var result = JSON.parse(xhr.responseText);
+                                var result = JSON.parse(responseText);
                                 if (result.status === 'ok') {
                                     onSuccess(result);
                                 } else {
                                     onError(result.message || '${%unknownError}');
                                 }
                             } catch(e) {
-                                onError('${%requestFailed}');
+                                showNotification('${%requestFailed}: ' + xhr.status, 'error');
+                                if (onError) onError('${%requestFailed}');
                             }
                         }
+                    };
+                    xhr.onerror = function() {
+                        showNotification('${%requestFailed}', 'error');
+                        if (onError) onError('${%requestFailed}');
                     };
                     xhr.send(formData);
                 }
