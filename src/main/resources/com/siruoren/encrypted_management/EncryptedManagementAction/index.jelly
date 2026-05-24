@@ -229,7 +229,7 @@
                                 <textarea id="exportData" class="jenkins-input" rows="6" readonly="true" style="font-size:0.8em;"></textarea>
                             </div>
                         </div>
-                        <p style="color:#666; font-size:0.9em;">${%Save this data and password to a safe place. You can restore credentials from this backup on any Jenkins instance.}</p>
+                        <p style="color:#666; font-size:0.9em;">${%Save this data with password to a safe place. You can restore credentials from this backup on any Jenkins instance.}</p>
                     </div>
                 </div>
             </div>
