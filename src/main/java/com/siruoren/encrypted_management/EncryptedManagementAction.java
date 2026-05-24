@@ -1,14 +1,30 @@
 package com.siruoren.encrypted_management;
 
 import com.cloudbees.hudson.plugins.folder.Folder;
+import com.cloudbees.plugins.credentials.Credentials;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.CredentialsScope;
+import com.cloudbees.plugins.credentials.CredentialsStore;
+import com.cloudbees.plugins.credentials.common.IdCredentials;
+import com.cloudbees.plugins.credentials.common.StandardCredentials;
+import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
+import com.cloudbees.plugins.credentials.common.UsernameCredentials;
+import com.cloudbees.plugins.credentials.common.UsernamePasswordCredentials;
+import com.cloudbees.plugins.credentials.domains.Domain;
+import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import hudson.Extension;
 import hudson.model.Action;
 import hudson.model.Item;
+import hudson.model.ItemGroup;
+import hudson.security.Permission;
+import hudson.util.ListBoxModel;
 import hudson.util.Secret;
 import jenkins.model.Jenkins;
 import jenkins.model.TransientActionFactory;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
+import org.jenkinsci.plugins.plaincredentials.StringCredentials;
+import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
@@ -17,6 +33,7 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 import javax.annotation.Nonnull;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -24,8 +41,9 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * 凭据管理页面 Action，提供查看、解密、创建凭据的功能
- * 每次打开页面自动加载当前文件夹的所有凭证
+ * 凭据管理页面 Action
+ * 自动读取当前文件夹的所有原生凭据，支持创建/删除
+ * 凭据类型完全兼容Jenkins原生凭据系统
  */
 public class EncryptedManagementAction implements Action {
     private static final Logger LOGGER = Logger.getLogger(EncryptedManagementAction.class.getName());
@@ -60,30 +78,38 @@ public class EncryptedManagementAction implements Action {
     }
 
     /**
-     * 获取当前文件夹的凭据列表（页面渲染时自动调用）
+     * 获取当前文件夹的凭据存储
      */
-    public List<EncryptedVariable> getVariables() {
-        FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
-        if (property != null) {
-            return property.getVariables();
+    private CredentialsStore getFolderStore() {
+        for (CredentialsStore store : CredentialsProvider.lookupStores(folder)) {
+            if (store.getContext() == folder) {
+                return store;
+            }
         }
-        return Collections.emptyList();
+        return null;
     }
 
     /**
-     * API: 以JSON格式返回当前文件夹的所有凭据（供前端AJAX自动加载）
+     * API: 以JSON格式返回当前文件夹的所有凭据（页面自动加载）
      */
     public HttpResponse doListCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
         folder.checkPermission(Item.CONFIGURE);
 
-        List<EncryptedVariable> variables = getVariables();
         JSONArray arr = new JSONArray();
-        for (int i = 0; i < variables.size(); i++) {
-            EncryptedVariable v = variables.get(i);
+        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
+                StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList());
+
+        for (StandardCredentials c : creds) {
             JSONObject obj = new JSONObject();
-            obj.put("index", i);
-            obj.put("name", v.getName());
-            obj.put("encryptedValue", v.getEncryptedValue());
+            obj.put("id", c.getId());
+            obj.put("name", c.getDescription() != null ? c.getDescription() : c.getId());
+            obj.put("type", getCredentialsTypeName(c));
+            obj.put("typeKey", getCredentialsTypeKey(c));
+
+            if (c instanceof UsernamePasswordCredentials) {
+                obj.put("username", ((UsernamePasswordCredentials) c).getUsername());
+            }
+
             arr.add(obj);
         }
 
@@ -91,158 +117,203 @@ public class EncryptedManagementAction implements Action {
         result.put("success", true);
         result.put("credentials", arr);
         result.put("folder", folder.getFullName());
-        result.put("count", variables.size());
+        result.put("count", creds.size());
 
+        return jsonResult(result);
+    }
+
+    /**
+     * API: 解密指定凭据的值
+     */
+    @RequirePOST
+    public HttpResponse doDecryptCredential(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        if (id == null || id.isEmpty()) {
+            return errorResponse("Credential ID is required");
+        }
+
+        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
+                StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList());
+
+        for (StandardCredentials c : creds) {
+            if (c.getId().equals(id)) {
+                JSONObject result = new JSONObject();
+                result.put("success", true);
+                result.put("id", id);
+                result.put("type", getCredentialsTypeName(c));
+                result.put("typeKey", getCredentialsTypeKey(c));
+
+                if (c instanceof UsernamePasswordCredentials) {
+                    UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
+                    result.put("username", upc.getUsername());
+                    result.put("password", Secret.toString(upc.getPassword()));
+                } else if (c instanceof StringCredentials) {
+                    result.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
+                }
+
+                return jsonResult(result);
+            }
+        }
+
+        return errorResponse("Credential not found: " + id);
+    }
+
+    /**
+     * API: 创建Secret Text凭据
+     */
+    @RequirePOST
+    public HttpResponse doCreateSecretText(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        String description = req.getParameter("description");
+        String secret = req.getParameter("secret");
+
+        if (secret == null || secret.trim().isEmpty()) {
+            return errorResponse("Secret value is required");
+        }
+
+        CredentialsStore store = getFolderStore();
+        if (store == null) {
+            return errorResponse("No credentials store found for this folder");
+        }
+
+        try {
+            StringCredentialsImpl credential = new StringCredentialsImpl(
+                    CredentialsScope.GLOBAL,
+                    (id != null && !id.isEmpty()) ? id : null,
+                    description,
+                    Secret.fromString(secret));
+
+            store.addCredentials(Domain.global(), credential);
+            return successResponse("Secret text credential created successfully");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to create secret text credential", e);
+            return errorResponse("Failed to create credential: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 创建Username/Password凭据
+     */
+    @RequirePOST
+    public HttpResponse doCreateUsernamePassword(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        String description = req.getParameter("description");
+        String username = req.getParameter("username");
+        String password = req.getParameter("password");
+
+        if (username == null || username.trim().isEmpty()) {
+            return errorResponse("Username is required");
+        }
+        if (password == null || password.trim().isEmpty()) {
+            return errorResponse("Password is required");
+        }
+
+        CredentialsStore store = getFolderStore();
+        if (store == null) {
+            return errorResponse("No credentials store found for this folder");
+        }
+
+        try {
+            UsernamePasswordCredentialsImpl credential = new UsernamePasswordCredentialsImpl(
+                    CredentialsScope.GLOBAL,
+                    (id != null && !id.isEmpty()) ? id : null,
+                    description,
+                    username,
+                    password);
+
+            store.addCredentials(Domain.global(), credential);
+            return successResponse("Username/Password credential created successfully");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to create username/password credential", e);
+            return errorResponse("Failed to create credential: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 删除凭据
+     */
+    @RequirePOST
+    public HttpResponse doDeleteCredential(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        if (id == null || id.isEmpty()) {
+            return errorResponse("Credential ID is required");
+        }
+
+        CredentialsStore store = getFolderStore();
+        if (store == null) {
+            return errorResponse("No credentials store found for this folder");
+        }
+
+        try {
+            // Find the credential by ID
+            List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
+                    StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList());
+
+            for (StandardCredentials c : creds) {
+                if (c.getId().equals(id)) {
+                    boolean removed = store.removeCredentials(Domain.global(), c);
+                    if (removed) {
+                        return successResponse("Credential deleted successfully");
+                    } else {
+                        return errorResponse("Failed to remove credential from store");
+                    }
+                }
+            }
+            return errorResponse("Credential not found: " + id);
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to delete credential", e);
+            return errorResponse("Failed to delete credential: " + e.getMessage());
+        }
+    }
+
+    private String getCredentialsTypeName(StandardCredentials c) {
+        if (c instanceof UsernamePasswordCredentials) {
+            return "Username with password";
+        } else if (c instanceof StringCredentials) {
+            return "Secret text";
+        }
+        return c.getClass().getSimpleName();
+    }
+
+    private String getCredentialsTypeKey(StandardCredentials c) {
+        if (c instanceof UsernamePasswordCredentials) {
+            return "USERNAME_PASSWORD";
+        } else if (c instanceof StringCredentials) {
+            return "SECRET_TEXT";
+        }
+        return "OTHER";
+    }
+
+    private HttpResponse jsonResult(JSONObject json) {
         return new HttpResponse() {
             @Override
             public void generateResponse(StaplerRequest req, StaplerResponse rsp, Object node) throws IOException {
                 rsp.setContentType("application/json;charset=UTF-8");
-                rsp.getWriter().write(result.toString());
+                rsp.getWriter().write(json.toString());
             }
         };
     }
 
-    /**
-     * 解密指定索引的凭据
-     */
-    @RequirePOST
-    public void doDecrypt(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
-
-        String indexStr = req.getParameter("index");
-        if (indexStr == null || indexStr.isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Index parameter is required");
-            return;
-        }
-
-        int index;
-        try {
-            index = Integer.parseInt(indexStr);
-        } catch (NumberFormatException e) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Invalid index format");
-            return;
-        }
-
-        FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
-        if (property == null) {
-            sendError(rsp, HttpServletResponse.SC_NOT_FOUND, "No credentials found");
-            return;
-        }
-
-        EncryptedVariable variable = property.getVariable(index);
-        if (variable == null) {
-            sendError(rsp, HttpServletResponse.SC_NOT_FOUND, "Credential not found at index: " + index);
-            return;
-        }
-
-        String plainText;
-        try {
-            Secret secret = variable.getValue();
-            plainText = secret != null ? Secret.toString(secret) : "";
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to decrypt credential", e);
-            sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Decryption failed");
-            return;
-        }
-
-        rsp.setContentType("application/json;charset=UTF-8");
-        rsp.getWriter().write("{\"success\":true,\"plainText\":\"" + escapeJson(plainText) + "\"}");
+    private HttpResponse errorResponse(String message) {
+        JSONObject result = new JSONObject();
+        result.put("success", false);
+        result.put("message", message);
+        return jsonResult(result);
     }
 
-    /**
-     * 创建新的凭据并写入当前文件夹配置，然后 reload
-     */
-    @RequirePOST
-    public void doCreate(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
-
-        String name = req.getParameter("name");
-        String value = req.getParameter("value");
-
-        if (name == null || name.trim().isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Credential name is required");
-            return;
-        }
-        if (value == null || value.trim().isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Credential value is required");
-            return;
-        }
-
-        try {
-            FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
-            if (property == null) {
-                property = new FolderEncryptedProperty();
-                folder.addProperty(property);
-            }
-
-            // 检查同名凭据是否已存在
-            EncryptedVariable existing = property.findVariable(name.trim());
-            if (existing != null) {
-                rsp.setContentType("application/json;charset=UTF-8");
-                rsp.getWriter().write("{\"success\":false,\"message\":\"Credential with this name already exists\"}");
-                return;
-            }
-
-            // 创建凭据
-            EncryptedVariable newVar = new EncryptedVariable(name.trim(), Secret.fromString(value));
-            property.addVariable(newVar);
-
-            // 保存文件夹配置
-            property.saveFolderConfig();
-
-            rsp.setContentType("application/json;charset=UTF-8");
-            rsp.getWriter().write("{\"success\":true,\"message\":\"Credential created successfully\"}");
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create credential", e);
-            sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Creation failed");
-        }
-    }
-
-    /**
-     * 删除指定名称的凭据
-     */
-    @RequirePOST
-    public void doDelete(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
-
-        String name = req.getParameter("name");
-        if (name == null || name.trim().isEmpty()) {
-            sendError(rsp, HttpServletResponse.SC_BAD_REQUEST, "Credential name is required");
-            return;
-        }
-
-        try {
-            FolderEncryptedProperty property = folder.getProperties().get(FolderEncryptedProperty.class);
-            if (property == null) {
-                rsp.setContentType("application/json;charset=UTF-8");
-                rsp.getWriter().write("{\"success\":false}");
-                return;
-            }
-            boolean removed = property.removeVariable(name.trim());
-            if (removed) {
-                property.saveFolderConfig();
-            }
-            rsp.setContentType("application/json;charset=UTF-8");
-            rsp.getWriter().write("{\"success\":" + removed + "}");
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to delete credential", e);
-            sendError(rsp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Deletion failed");
-        }
-    }
-
-    private void sendError(StaplerResponse rsp, int code, String message) throws IOException {
-        rsp.setContentType("application/json;charset=UTF-8");
-        rsp.setStatus(code);
-        rsp.getWriter().write("{\"success\":false,\"message\":\"" + escapeJson(message) + "\"}");
-    }
-
-    private String escapeJson(String value) {
-        if (value == null) return "";
-        return value.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
+    private HttpResponse successResponse(String message) {
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("message", message);
+        return jsonResult(result);
     }
 
     /**

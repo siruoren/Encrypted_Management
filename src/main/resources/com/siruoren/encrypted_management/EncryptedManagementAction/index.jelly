@@ -11,27 +11,65 @@
                 <div class="jenkins-alert jenkins-alert-info">${%Loading credentials...}</div>
             </div>
 
-            <!-- 创建新凭据表单 -->
+            <!-- 创建新凭据 -->
             <div style="margin-top: 2em;">
-                <h2>${%Create New Credential}</h2>
-                <div class="jenkins-form">
+                <h2>${%Add Credential}</h2>
+
+                <!-- 凭据类型选择 -->
+                <div class="jenkins-form-item">
+                    <div class="jenkins-form-label">${%Kind}</div>
+                    <div class="jenkins-form-control">
+                        <select id="credentialType" class="jenkins-input" onchange="toggleCredentialForm()">
+                            <option value="SECRET_TEXT">${%Secret text}</option>
+                            <option value="USERNAME_PASSWORD">${%Username with password}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 通用字段 -->
+                <div class="jenkins-form-item">
+                    <div class="jenkins-form-label">${%ID}</div>
+                    <div class="jenkins-form-control">
+                        <input type="text" id="credId" class="jenkins-input" placeholder="${%Optional - leave empty for auto-generated}"/>
+                    </div>
+                </div>
+                <div class="jenkins-form-item">
+                    <div class="jenkins-form-label">${%Description}</div>
+                    <div class="jenkins-form-control">
+                        <input type="text" id="credDescription" class="jenkins-input" placeholder="${%Optional description}"/>
+                    </div>
+                </div>
+
+                <!-- Secret Text 表单 -->
+                <div id="form-secret-text">
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Credential Name}</div>
+                        <div class="jenkins-form-label">${%Secret}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="varName" class="jenkins-input" placeholder="${%Enter credential name}"/>
+                            <input type="password" id="credSecret" class="jenkins-input" placeholder="${%Enter secret text}"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Username/Password 表单 -->
+                <div id="form-username-password" style="display:none;">
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Username}</div>
+                        <div class="jenkins-form-control">
+                            <input type="text" id="credUsername" class="jenkins-input" placeholder="${%Enter username}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Credential Value}</div>
+                        <div class="jenkins-form-label">${%Password}</div>
                         <div class="jenkins-form-control">
-                            <input type="password" id="varValue" class="jenkins-input" placeholder="${%Enter credential value}"/>
+                            <input type="password" id="credPassword" class="jenkins-input" placeholder="${%Enter password}"/>
                         </div>
                     </div>
-                    <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">
-                            ${%Create}
-                        </button>
-                    </div>
+                </div>
+
+                <div class="jenkins-form-item">
+                    <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">
+                        ${%Add}
+                    </button>
                 </div>
             </div>
 
@@ -47,34 +85,40 @@
 
                     var i18n = {
                         hide: "${%Hide}",
-                        decrypt: "${%Decrypt}",
+                        decrypt: "${%Show Secret}",
                         decryptionFailed: "${%Decryption failed}",
                         requestFailed: "${%Request failed}",
-                        credentialNameRequired: "${%Credential name is required}",
-                        credentialValueRequired: "${%Credential value is required}",
+                        idRequired: "${%Credential ID is required}",
+                        secretRequired: "${%Secret value is required}",
+                        usernameRequired: "${%Username is required}",
+                        passwordRequired: "${%Password is required}",
                         credentialCreated: "${%Credential created successfully. Reloading...}",
                         creationFailed: "${%Creation failed}",
-                        confirmDelete: "${%Are you sure you want to delete credential}",
+                        confirmDelete: "${%Are you sure you want to delete this credential}",
                         credentialDeleted: "${%Credential deleted. Reloading...}",
                         failedToDelete: "${%Failed to delete credential}",
                         noCredentials: "${%No credentials configured for this folder.}",
-                        name: "${%Name}",
-                        encryptedValue: "${%Encrypted Value}",
+                        id: "${%ID}",
+                        description: "${%Description}",
+                        kind: "${%Kind}",
                         actions: "${%Actions}",
                         deleteLabel: "${%Delete}",
-                        loading: "${%Loading credentials...}"
+                        loading: "${%Loading credentials...}",
+                        username: "${%Username}",
+                        secret: "${%Secret}"
                     };
 
-                    function escapeHtml(str) {
-                        if (!str) return '';
-                        var div = document.createElement('div');
-                        div.appendChild(document.createTextNode(str));
-                        return div.innerHTML;
-                    }
-
-                    function escapeJs(str) {
-                        if (!str) return '';
-                        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+                    function toggleCredentialForm() {
+                        var type = document.getElementById('credentialType').value;
+                        var stForm = document.getElementById('form-secret-text');
+                        var upForm = document.getElementById('form-username-password');
+                        if (type === 'SECRET_TEXT') {
+                            stForm.style.display = '';
+                            upForm.style.display = 'none';
+                        } else {
+                            stForm.style.display = 'none';
+                            upForm.style.display = '';
+                        }
                     }
 
                     /**
@@ -121,104 +165,137 @@
                         table.className = 'jenkins-table jenkins-table--medium sortable';
                         table.id = 'credentials-table';
 
+                        // thead
                         var thead = document.createElement('thead');
                         var headRow = document.createElement('tr');
-                        var th1 = document.createElement('th');
-                        th1.textContent = i18n.name;
-                        var th2 = document.createElement('th');
-                        th2.textContent = i18n.encryptedValue;
-                        var th3 = document.createElement('th');
-                        th3.style.textAlign = 'right';
-                        th3.textContent = i18n.actions;
-                        headRow.appendChild(th1);
-                        headRow.appendChild(th2);
-                        headRow.appendChild(th3);
+                        var headers = [i18n.id, i18n.description, i18n.kind, i18n.actions];
+                        for (var h = 0; h < headers.length; h++) {
+                            var th = document.createElement('th');
+                            th.textContent = headers[h];
+                            if (h === headers.length - 1) th.style.textAlign = 'right';
+                            headRow.appendChild(th);
+                        }
                         thead.appendChild(headRow);
                         table.appendChild(thead);
 
+                        // tbody
                         var tbody = document.createElement('tbody');
                         for (var i = 0; i < credentials.length; i++) {
                             var c = credentials[i];
                             var row = document.createElement('tr');
-                            row.setAttribute('data-index', c.index);
+                            row.setAttribute('data-id', c.id);
 
-                            var td1 = document.createElement('td');
-                            td1.textContent = c.name;
-                            row.appendChild(td1);
+                            // ID
+                            var tdId = document.createElement('td');
+                            tdId.style.fontFamily = 'monospace';
+                            tdId.textContent = c.id;
+                            row.appendChild(tdId);
 
-                            var td2 = document.createElement('td');
-                            var encSpan = document.createElement('span');
-                            encSpan.className = 'encrypted-value';
-                            encSpan.textContent = c.encryptedValue;
-                            td2.appendChild(encSpan);
-                            var decSpan = document.createElement('span');
-                            decSpan.className = 'decrypted-value';
-                            decSpan.id = 'decrypted-' + c.index;
-                            decSpan.style.display = 'none';
-                            decSpan.style.color = '#0d6efd';
-                            decSpan.style.fontWeight = 'bold';
-                            td2.appendChild(decSpan);
-                            row.appendChild(td2);
+                            // Description
+                            var tdDesc = document.createElement('td');
+                            tdDesc.textContent = c.name || '';
+                            row.appendChild(tdDesc);
 
-                            var td3 = document.createElement('td');
-                            td3.style.textAlign = 'right';
-                            var decryptBtn = document.createElement('button');
-                            decryptBtn.className = 'jenkins-button jenkins-button--primary decrypt-btn';
-                            decryptBtn.setAttribute('data-index', c.index);
-                            decryptBtn.textContent = i18n.decrypt;
-                            (function(idx) {
-                                decryptBtn.onclick = function() { decryptCredential(idx); };
-                            })(c.index);
-                            td3.appendChild(decryptBtn);
-                            td3.appendChild(document.createTextNode(' '));
-                            var deleteBtn = document.createElement('button');
-                            deleteBtn.className = 'jenkins-button jenkins-button--danger delete-btn';
-                            deleteBtn.setAttribute('data-name', c.name);
-                            deleteBtn.textContent = i18n.deleteLabel;
-                            (function(name) {
-                                deleteBtn.onclick = function() { deleteCredential(name); };
-                            })(c.name);
-                            td3.appendChild(deleteBtn);
-                            row.appendChild(td3);
+                            // Kind
+                            var tdKind = document.createElement('td');
+                            var kindBadge = document.createElement('span');
+                            kindBadge.className = 'jenkins-badge';
+                            kindBadge.textContent = c.type;
+                            tdKind.appendChild(kindBadge);
+                            if (c.username) {
+                                var userSpan = document.createElement('span');
+                                userSpan.style.marginLeft = '0.5em';
+                                userSpan.style.color = '#666';
+                                userSpan.textContent = '(' + c.username + ')';
+                                tdKind.appendChild(userSpan);
+                            }
+                            row.appendChild(tdKind);
 
+                            // Actions
+                            var tdAct = document.createElement('td');
+                            tdAct.style.textAlign = 'right';
+
+                            // Show Secret button
+                            var showBtn = document.createElement('button');
+                            showBtn.className = 'jenkins-button jenkins-button--primary show-btn';
+                            showBtn.setAttribute('data-id', c.id);
+                            showBtn.setAttribute('data-type', c.typeKey);
+                            showBtn.textContent = i18n.decrypt;
+                            (function(credId, typeKey) {
+                                showBtn.onclick = function() { showCredential(credId, typeKey, this); };
+                            })(c.id, c.typeKey);
+                            tdAct.appendChild(showBtn);
+                            tdAct.appendChild(document.createTextNode(' '));
+
+                            // Delete button
+                            var delBtn = document.createElement('button');
+                            delBtn.className = 'jenkins-button jenkins-button--danger delete-btn';
+                            delBtn.setAttribute('data-id', c.id);
+                            delBtn.textContent = i18n.deleteLabel;
+                            (function(credId) {
+                                delBtn.onclick = function() { deleteCredential(credId); };
+                            })(c.id);
+                            tdAct.appendChild(delBtn);
+
+                            row.appendChild(tdAct);
                             tbody.appendChild(row);
                         }
                         table.appendChild(tbody);
                         container.appendChild(table);
                     }
 
-                    function decryptCredential(index) {
-                        var btn = document.querySelector('.decrypt-btn[data-index="' + index + '"]');
-                        var decryptedSpan = document.getElementById('decrypted-' + index);
-                        var encryptedSpan = btn.closest('tr').querySelector('.encrypted-value');
-
+                    function showCredential(id, typeKey, btn) {
                         btn.disabled = true;
                         btn.textContent = '...';
 
-                        fetch(credentialsUrl + 'decrypt', {
+                        fetch(credentialsUrl + 'decryptCredential', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'index=' + encodeURIComponent(index)
+                            body: 'id=' + encodeURIComponent(id)
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
                             if (data.success) {
-                                encryptedSpan.style.display = 'none';
-                                decryptedSpan.textContent = data.plainText;
-                                decryptedSpan.style.display = 'inline';
+                                var row = btn.closest('tr');
+                                var tdKind = row.children[2];
+                                // Remove previous detail if any
+                                var oldDetail = row.querySelector('.cred-detail');
+                                if (oldDetail) oldDetail.remove();
+
+                                var detailDiv = document.createElement('div');
+                                detailDiv.className = 'cred-detail';
+                                detailDiv.style.marginTop = '0.5em';
+                                detailDiv.style.padding = '0.5em';
+                                detailDiv.style.background = '#f0f8ff';
+                                detailDiv.style.borderRadius = '4px';
+
+                                if (typeKey === 'USERNAME_PASSWORD') {
+                                    var uLabel = document.createElement('strong');
+                                    uLabel.textContent = i18n.username + ': ';
+                                    detailDiv.appendChild(uLabel);
+                                    detailDiv.appendChild(document.createTextNode(data.username));
+                                    detailDiv.appendChild(document.createElement('br'));
+                                    var pLabel = document.createElement('strong');
+                                    pLabel.textContent = i18n.secret + ': ';
+                                    detailDiv.appendChild(pLabel);
+                                    detailDiv.appendChild(document.createTextNode(data.password));
+                                } else {
+                                    var sLabel = document.createElement('strong');
+                                    sLabel.textContent = i18n.secret + ': ';
+                                    detailDiv.appendChild(sLabel);
+                                    detailDiv.appendChild(document.createTextNode(data.secret));
+                                }
+
+                                tdKind.appendChild(detailDiv);
                                 btn.textContent = i18n.hide;
                                 btn.disabled = false;
                                 btn.onclick = function() {
-                                    if (decryptedSpan.style.display === 'none') {
-                                        decryptedSpan.style.display = 'inline';
-                                        encryptedSpan.style.display = 'none';
-                                        btn.textContent = i18n.hide;
-                                    } else {
-                                        decryptedSpan.style.display = 'none';
-                                        encryptedSpan.style.display = 'inline';
+                                    var detail = row.querySelector('.cred-detail');
+                                    if (detail) {
+                                        detail.remove();
                                         btn.textContent = i18n.decrypt;
                                     }
                                 };
@@ -236,28 +313,44 @@
                     }
 
                     function createCredential() {
-                        var name = document.getElementById('varName').value.trim();
-                        var value = document.getElementById('varValue').value.trim();
+                        var type = document.getElementById('credentialType').value;
+                        var id = document.getElementById('credId').value.trim();
+                        var description = document.getElementById('credDescription').value.trim();
 
-                        if (!name) {
-                            showMessage(i18n.credentialNameRequired, 'error');
-                            return;
-                        }
-                        if (!value) {
-                            showMessage(i18n.credentialValueRequired, 'error');
-                            return;
+                        var endpoint, body;
+                        if (type === 'SECRET_TEXT') {
+                            var secret = document.getElementById('credSecret').value.trim();
+                            if (!secret) {
+                                showMessage(i18n.secretRequired, 'error');
+                                return;
+                            }
+                            endpoint = 'createSecretText';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&secret=' + encodeURIComponent(secret);
+                        } else {
+                            var username = document.getElementById('credUsername').value.trim();
+                            var password = document.getElementById('credPassword').value.trim();
+                            if (!username) {
+                                showMessage(i18n.usernameRequired, 'error');
+                                return;
+                            }
+                            if (!password) {
+                                showMessage(i18n.passwordRequired, 'error');
+                                return;
+                            }
+                            endpoint = 'createUsernamePassword';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
                         }
 
                         var createBtn = event.target;
                         createBtn.disabled = true;
 
-                        fetch(credentialsUrl + 'create', {
+                        fetch(credentialsUrl + endpoint, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'name=' + encodeURIComponent(name) + '&value=' + encodeURIComponent(value)
+                            body: body
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
@@ -275,18 +368,18 @@
                         });
                     }
 
-                    function deleteCredential(name) {
-                        if (!confirm(i18n.confirmDelete + ': ' + name + '?')) {
+                    function deleteCredential(id) {
+                        if (!confirm(i18n.confirmDelete + ' (' + id + ')?')) {
                             return;
                         }
 
-                        fetch(credentialsUrl + 'delete', {
+                        fetch(credentialsUrl + 'deleteCredential', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'name=' + encodeURIComponent(name)
+                            body: 'id=' + encodeURIComponent(id)
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
