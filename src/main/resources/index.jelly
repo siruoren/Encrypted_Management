@@ -1,4 +1,6 @@
 <?jelly escape-by-default='true'?>
-<div>
-    Encrypted variable management plugin for Jenkins. Manage SSH key pairs and encrypted variables per folder.
-</div>
+<j:jelly xmlns:j="jelly:core">
+    <div>
+        Encrypted Management Plugin - Manage encrypted variables in Jenkins folders.
+    </div>
+</j:jelly>
