@@ -27,10 +27,15 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -41,6 +46,19 @@ import java.util.logging.Logger;
  */
 public class EncryptedManagementAction implements Action {
     private static final Logger LOGGER = Logger.getLogger(EncryptedManagementAction.class.getName());
+
+    // 有限线程池，用于异步执行耗时操作（同步外部存储等），防阻塞防内存泄露
+    private static final ExecutorService asyncExecutor = Executors.newFixedThreadPool(
+            Runtime.getRuntime().availableProcessors(),
+            new ThreadFactory() {
+                private final AtomicInteger counter = new AtomicInteger(0);
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "EncryptedManagement-Async-" + counter.incrementAndGet());
+                    t.setDaemon(true); // 守护线程，JVM关闭时自动退出
+                    return t;
+                }
+            });
 
     private final Folder folder;
 
@@ -180,6 +198,7 @@ public class EncryptedManagementAction implements Action {
             }
         }
 
+        AuditLogger.logRead(folder.getFullName(), id, getCredentialsTypeKey(c));
         return jsonResult(result);
     }
 
@@ -211,6 +230,7 @@ public class EncryptedManagementAction implements Action {
                     Secret.fromString(secret));
 
             store.addCredentials(Domain.global(), credential);
+            AuditLogger.logCreate(folder.getFullName(), credential.getId(), "SECRET_TEXT");
             return successResponse("Secret text credential created successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to create secret text credential", e);
@@ -251,6 +271,7 @@ public class EncryptedManagementAction implements Action {
                     password);
 
             store.addCredentials(Domain.global(), credential);
+            AuditLogger.logCreate(folder.getFullName(), credential.getId(), "USERNAME_PASSWORD");
             return successResponse("Username/Password credential created successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to create username/password credential", e);
@@ -296,6 +317,7 @@ public class EncryptedManagementAction implements Action {
                     description);
 
             store.addCredentials(Domain.global(), credential);
+            AuditLogger.logCreate(folder.getFullName(), credential.getId(), "SSH_KEY");
             return successResponse("SSH credential created successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to create SSH credential", e);
@@ -339,6 +361,7 @@ public class EncryptedManagementAction implements Action {
                     Secret.fromString(secret != null ? secret : Secret.toString(((StringCredentials) existing).getSecret())));
 
             store.updateCredentials(Domain.global(), existing, updated);
+            AuditLogger.logUpdate(folder.getFullName(), id, "SECRET_TEXT");
             return successResponse("Secret text credential updated successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to update secret text credential", e);
@@ -385,6 +408,7 @@ public class EncryptedManagementAction implements Action {
                     password != null ? password : Secret.toString(oldCred.getPassword()));
 
             store.updateCredentials(Domain.global(), existing, updated);
+            AuditLogger.logUpdate(folder.getFullName(), id, "USERNAME_PASSWORD");
             return successResponse("Username/Password credential updated successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to update username/password credential", e);
@@ -436,6 +460,7 @@ public class EncryptedManagementAction implements Action {
                     description != null ? description : existing.getDescription());
 
             store.updateCredentials(Domain.global(), existing, updated);
+            AuditLogger.logUpdate(folder.getFullName(), id, "SSH_KEY");
             return successResponse("SSH credential updated successfully");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to update SSH credential", e);
@@ -468,6 +493,7 @@ public class EncryptedManagementAction implements Action {
 
             boolean removed = store.removeCredentials(Domain.global(), c);
             if (removed) {
+                AuditLogger.logDelete(folder.getFullName(), id, getCredentialsTypeKey(c));
                 return successResponse("Credential deleted successfully");
             } else {
                 return errorResponse("Failed to remove credential from store");
@@ -511,6 +537,7 @@ public class EncryptedManagementAction implements Action {
             JSONObject json = new JSONObject();
             json.put("success", true);
             json.put("data", result);
+            AuditLogger.logGenerateKeyPair(folder.getFullName());
             return jsonResult(json);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair", e);
@@ -728,6 +755,345 @@ public class EncryptedManagementAction implements Action {
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("message", message);
+        return jsonResult(result);
+    }
+
+    // ==================== 审计日志 API ====================
+
+    /**
+     * API: 查询审计日志
+     */
+    @RequirePOST
+    public HttpResponse doAuditLog(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        int limit = 100;
+        String limitParam = req.getParameter("limit");
+        if (limitParam != null && !limitParam.isEmpty()) {
+            try {
+                limit = Math.min(Integer.parseInt(limitParam), 1000);
+            } catch (NumberFormatException ignored) {}
+        }
+
+        java.util.List<String> logs = AuditLogger.readRecentLogs(limit);
+        JSONArray logArray = new JSONArray();
+        for (String line : logs) {
+            logArray.add(line);
+        }
+
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("logs", logArray);
+        result.put("count", logs.size());
+        result.put("maxRetentionDays", AuditLogger.getMaxLogFiles());
+        return jsonResult(result);
+    }
+
+    /**
+     * API: 配置审计日志保留天数
+     */
+    @RequirePOST
+    public HttpResponse doConfigureAuditLog(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String daysParam = req.getParameter("maxRetentionDays");
+        if (daysParam != null && !daysParam.isEmpty()) {
+            try {
+                int days = Integer.parseInt(daysParam);
+                if (days < 1) {
+                    return errorResponse("Retention days must be at least 1");
+                }
+                AuditLogger.setMaxLogFiles(days);
+                AuditLogger.log(folder.getFullName(), "CONFIGURE_AUDIT", "*", "*", "maxRetentionDays=" + days);
+                return successResponse("Audit log retention set to " + days + " days");
+            } catch (NumberFormatException e) {
+                return errorResponse("Invalid retention days value");
+            }
+        }
+        return errorResponse("Missing maxRetentionDays parameter");
+    }
+
+    // ==================== 备份/导出/导入 API ====================
+
+    /**
+     * API: 导出凭据为加密数据（JSON返回，用于页面内粘贴复制）
+     */
+    @RequirePOST
+    public HttpResponse doExportCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String password = req.getParameter("password");
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Encryption password is required");
+        }
+        if (password.length() < 8) {
+            return errorResponse("Password must be at least 8 characters");
+        }
+
+        try {
+            String encryptedData = CredentialBackupService.exportCredentials(folder, password);
+            AuditLogger.logExport(folder.getFullName(), "exported " + folder.getFullName());
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("data", encryptedData);
+            result.put("folder", folder.getFullName());
+            result.put("message", "Credentials exported successfully. Keep the encrypted data and password safe.");
+            return jsonResult(result);
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to export credentials", e);
+            return errorResponse("Failed to export credentials: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 导出凭据为加密文件下载
+     */
+    @RequirePOST
+    public HttpResponse doExportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String password = req.getParameter("password");
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Encryption password is required");
+        }
+        if (password.length() < 8) {
+            return errorResponse("Password must be at least 8 characters");
+        }
+
+        try {
+            String encryptedData = CredentialBackupService.exportCredentials(folder, password);
+            AuditLogger.logExport(folder.getFullName(), "exported as file: " + folder.getFullName());
+
+            String filename = "credentials-backup-" + folder.getFullName().replaceAll("[/\\\\]", "-")
+                    + "-" + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+                    + ".enc";
+
+            return new HttpResponse() {
+                @Override
+                public void generateResponse(StaplerRequest req, StaplerResponse rsp, Object node) throws IOException {
+                    rsp.setContentType("application/octet-stream");
+                    rsp.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+                    rsp.getWriter().write(encryptedData);
+                }
+            };
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to export credentials as file", e);
+            return errorResponse("Failed to export credentials: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 从加密数据导入凭据
+     */
+    @RequirePOST
+    public HttpResponse doImportCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String password = req.getParameter("password");
+        String encryptedData = req.getParameter("data");
+        String overwriteParam = req.getParameter("overwrite");
+
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Decryption password is required");
+        }
+        if (encryptedData == null || encryptedData.isEmpty()) {
+            return errorResponse("Encrypted data is required");
+        }
+
+        boolean overwrite = "true".equals(overwriteParam);
+
+        try {
+            JSONObject importResult = CredentialBackupService.importCredentials(folder, encryptedData, password, overwrite);
+            AuditLogger.logImport(folder.getFullName(), "imported: " + importResult.toString());
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("importResult", importResult);
+            result.put("message", "Credentials imported successfully");
+            return jsonResult(result);
+        } catch (javax.crypto.AEADBadTagException e) {
+            return errorResponse("Decryption failed: wrong password or corrupted data");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to import credentials", e);
+            return errorResponse("Failed to import credentials: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 从上传文件导入凭据
+     * 前端使用FileReader读取文件内容后，通过importCredentials API导入
+     * 此API保留作为multipart上传的备选入口
+     */
+    @RequirePOST
+    public HttpResponse doImportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String password = req.getParameter("password");
+        String encryptedData = req.getParameter("data");
+        String overwriteParam = req.getParameter("overwrite");
+
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Decryption password is required");
+        }
+        if (encryptedData == null || encryptedData.isEmpty()) {
+            return errorResponse("No backup data provided");
+        }
+
+        boolean overwrite = "true".equals(overwriteParam);
+
+        try {
+            JSONObject importResult = CredentialBackupService.importCredentials(folder, encryptedData.trim(), password, overwrite);
+            AuditLogger.logImport(folder.getFullName(), "imported from file: " + importResult.toString());
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("importResult", importResult);
+            result.put("message", "Credentials imported successfully from file");
+            return jsonResult(result);
+        } catch (javax.crypto.AEADBadTagException e) {
+            return errorResponse("Decryption failed: wrong password or corrupted data");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to import credentials from file", e);
+            return errorResponse("Failed to import credentials: " + e.getMessage());
+        }
+    }
+
+    // ==================== 外部存储 API ====================
+
+    /**
+     * API: 获取外部存储状态
+     */
+    @RequirePOST
+    public HttpResponse doStorageStatus(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        ExternalStorageManager manager = ExternalStorageManager.getInstance();
+        JSONObject status = manager.getStatus();
+        status.put("success", true);
+        return jsonResult(status);
+    }
+
+    /**
+     * API: 配置外部存储
+     */
+    @RequirePOST
+    public HttpResponse doConfigureStorage(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        ExternalStorageManager manager = ExternalStorageManager.getInstance();
+
+        String enabledStr = req.getParameter("enabled");
+        String syncModeStr = req.getParameter("syncMode");
+        String storagePath = req.getParameter("storagePath");
+        String encryptionPassword = req.getParameter("encryptionPassword");
+
+        boolean enabled = "true".equalsIgnoreCase(enabledStr);
+        manager.setEnabled(enabled);
+
+        if (syncModeStr != null) {
+            try {
+                ExternalStorageManager.SyncMode mode = ExternalStorageManager.SyncMode.valueOf(syncModeStr);
+                manager.setSyncMode(mode);
+            } catch (IllegalArgumentException e) {
+                return errorResponse("Invalid sync mode: " + syncModeStr);
+            }
+        }
+
+        if (storagePath != null && !storagePath.trim().isEmpty()) {
+            manager.setStoragePath(storagePath.trim());
+        }
+
+        if (encryptionPassword != null && !encryptionPassword.isEmpty()) {
+            manager.setEncryptionPassword(encryptionPassword);
+        }
+
+        String detail = "enabled=" + enabled + ", syncMode=" + syncModeStr
+                + ", path=" + storagePath
+                + ", encrypted=" + (encryptionPassword != null && !encryptionPassword.isEmpty());
+        AuditLogger.log(folder.getFullName(), "CONFIGURE_STORAGE", "*", "*", detail);
+        return successResponse("External storage configuration saved");
+    }
+
+    /**
+     * API: 测试外部存储连接
+     */
+    @RequirePOST
+    public HttpResponse doTestStorageConnection(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        ExternalStorageManager manager = ExternalStorageManager.getInstance();
+        boolean connected = manager.testConnection();
+
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("connected", connected);
+        return jsonResult(result);
+    }
+
+    /**
+     * API: 同步凭据到外部存储（异步非阻塞）
+     */
+    @RequirePOST
+    public HttpResponse doSyncToExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        ExternalStorageManager manager = ExternalStorageManager.getInstance();
+        if (!manager.isEnabled()) {
+            return errorResponse("External storage is not enabled");
+        }
+
+        // 快照读取凭据列表，避免长时间持有引用
+        final List<StandardCredentials> creds = new ArrayList<>(CredentialsProvider.lookupCredentials(
+                StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList()));
+        final String folderName = folder.getFullName();
+
+        // 异步执行同步操作，不阻塞请求线程
+        asyncExecutor.submit(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ExternalStorage storage = manager.getStorage();
+                    int synced = 0;
+                    for (StandardCredentials c : creds) {
+                        try {
+                            JSONObject credData = new JSONObject();
+                            credData.put("id", c.getId());
+                            credData.put("description", c.getDescription());
+                            credData.put("type", getCredentialsTypeKey(c));
+
+                            if (c instanceof UsernamePasswordCredentials) {
+                                UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
+                                credData.put("username", upc.getUsername());
+                                credData.put("password", Secret.toString(upc.getPassword()));
+                            } else if (c instanceof StringCredentials) {
+                                credData.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
+                            } else if (c instanceof BasicSSHUserPrivateKey) {
+                                BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
+                                credData.put("username", ssh.getUsername());
+                                credData.put("passphrase", Secret.toString(ssh.getPassphrase()));
+                                credData.put("privateKey", ssh.getPrivateKey());
+                            }
+
+                            storage.saveCredential(folderName, c.getId(), credData);
+                            synced++;
+                        } catch (Exception e) {
+                            LOGGER.log(Level.WARNING, "Failed to sync credential: " + c.getId(), e);
+                        }
+                    }
+
+                    AuditLogger.log(folderName, "SYNC_TO_EXTERNAL", "*", "*", "synced " + synced + " credentials");
+                    LOGGER.info("Async sync completed: " + synced + " credentials synced for folder " + folderName);
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Failed to sync credentials to external storage", e);
+                }
+            }
+        });
+
+        // 立即返回，不等待同步完成
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("message", "Sync started in background for " + creds.size() + " credentials");
         return jsonResult(result);
     }
 
