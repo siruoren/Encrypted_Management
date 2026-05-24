@@ -92,10 +92,7 @@ public class FolderEncryptedProperty extends FolderProperty<Folder> {
 
     @Override
     public List<Action> getFolderActions() {
-        Folder folder = getOwner();
-        if (folder != null) {
-            return Collections.singletonList(new EncryptedManagementAction(folder));
-        }
+        // Action由EncryptedManagementAction.ActionFactory(TransientActionFactory)统一注册，此处不再重复
         return Collections.emptyList();
     }
 

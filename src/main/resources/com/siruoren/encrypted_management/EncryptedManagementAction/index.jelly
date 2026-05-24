@@ -3,6 +3,8 @@
     <l:layout title="${%Credentials Management} - ${it.folder.displayName}">
         <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
         <l:main-panel>
+            <j:choose>
+                <j:when test="${it.hasPermission()}">
             <h1>${%Credentials Management}</h1>
             <p>${%Folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
 
@@ -12,7 +14,7 @@
             </div>
 
             <!-- 创建新凭据 -->
-            <div style="margin-top: 2em;">
+            <div id="create-section" style="margin-top: 2em;">
                 <h2>${%Add Credential}</h2>
 
                 <!-- 凭据类型选择 -->
@@ -22,6 +24,7 @@
                         <select id="credentialType" class="jenkins-input" onchange="toggleCredentialForm()">
                             <option value="SECRET_TEXT">${%Secret text}</option>
                             <option value="USERNAME_PASSWORD">${%Username with password}</option>
+                            <option value="SSH_KEY">${%SSH Username with private key}</option>
                         </select>
                     </div>
                 </div>
@@ -66,10 +69,96 @@
                     </div>
                 </div>
 
+                <!-- SSH Key 表单 -->
+                <div id="form-ssh-key" style="display:none;">
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Username}</div>
+                        <div class="jenkins-form-control">
+                            <input type="text" id="credSshUsername" class="jenkins-input" placeholder="${%Enter username}"/>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Passphrase}</div>
+                        <div class="jenkins-form-control">
+                            <input type="password" id="credPassphrase" class="jenkins-input" placeholder="${%Optional passphrase}"/>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Private Key}</div>
+                        <div class="jenkins-form-control">
+                            <textarea id="credPrivateKey" class="jenkins-input" rows="8" placeholder="${%Enter private key}"></textarea>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="jenkins-form-item">
                     <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">
                         ${%Add}
                     </button>
+                </div>
+            </div>
+
+            <!-- 更新凭据弹窗 -->
+            <div id="update-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
+                    <h2>${%Update Credential}</h2>
+                    <input type="hidden" id="updateId"/>
+                    <input type="hidden" id="updateTypeKey"/>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Description}</div>
+                        <div class="jenkins-form-control">
+                            <input type="text" id="updateDescription" class="jenkins-input"/>
+                        </div>
+                    </div>
+                    <!-- Secret Text 更新字段 -->
+                    <div id="update-form-secret-text" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Secret}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%Leave empty to keep current value}"/>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Username/Password 更新字段 -->
+                    <div id="update-form-username-password" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-control">
+                                <input type="text" id="updateUsername" class="jenkins-input"/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Password}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%Leave empty to keep current value}"/>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- SSH Key 更新字段 -->
+                    <div id="update-form-ssh-key" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-control">
+                                <input type="text" id="updateSshUsername" class="jenkins-input"/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Passphrase}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%Leave empty to keep current value}"/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Private Key}</div>
+                            <div class="jenkins-form-control">
+                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%Leave empty to keep current value}"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item" style="margin-top:1em;">
+                        <button class="jenkins-button jenkins-button--primary" onclick="submitUpdate()">${%Save}</button>
+                        <button class="jenkins-button" onclick="closeUpdateDialog()" style="margin-left:0.5em;">${%Cancel}</button>
+                    </div>
                 </div>
             </div>
 
@@ -85,13 +174,15 @@
 
                     var i18n = {
                         hide: "${%Hide}",
-                        decrypt: "${%Show Secret}",
+                        showSecret: "${%Show Secret}",
+                        update: "${%Update}",
                         decryptionFailed: "${%Decryption failed}",
                         requestFailed: "${%Request failed}",
-                        idRequired: "${%Credential ID is required}",
+                        permissionDenied: "${%Permission denied. You do not have access to manage credentials for this folder.}",
                         secretRequired: "${%Secret value is required}",
                         usernameRequired: "${%Username is required}",
                         passwordRequired: "${%Password is required}",
+                        privateKeyRequired: "${%Private key is required}",
                         credentialCreated: "${%Credential created successfully. Reloading...}",
                         creationFailed: "${%Creation failed}",
                         confirmDelete: "${%Are you sure you want to delete this credential}",
@@ -105,20 +196,30 @@
                         deleteLabel: "${%Delete}",
                         loading: "${%Loading credentials...}",
                         username: "${%Username}",
-                        secret: "${%Secret}"
+                        secret: "${%Secret}",
+                        passphrase: "${%Passphrase}",
+                        privateKey: "${%Private Key}",
+                        credentialUpdated: "${%Credential updated successfully. Reloading...}",
+                        updateFailed: "${%Update failed}"
                     };
 
                     function toggleCredentialForm() {
                         var type = document.getElementById('credentialType').value;
-                        var stForm = document.getElementById('form-secret-text');
-                        var upForm = document.getElementById('form-username-password');
-                        if (type === 'SECRET_TEXT') {
-                            stForm.style.display = '';
-                            upForm.style.display = 'none';
-                        } else {
-                            stForm.style.display = 'none';
-                            upForm.style.display = '';
-                        }
+                        document.getElementById('form-secret-text').style.display = type === 'SECRET_TEXT' ? '' : 'none';
+                        document.getElementById('form-username-password').style.display = type === 'USERNAME_PASSWORD' ? '' : 'none';
+                        document.getElementById('form-ssh-key').style.display = type === 'SSH_KEY' ? '' : 'none';
+                    }
+
+                    /**
+                     * 带权限检查的fetch封装，自动处理403错误
+                     */
+                    function secureFetch(url, options) {
+                        return fetch(url, options).then(function(response) {
+                            if (response.status === 403 || response.status === 401) {
+                                throw new Error(i18n.permissionDenied);
+                            }
+                            return response;
+                        });
                     }
 
                     /**
@@ -132,7 +233,7 @@
                         alertDiv.textContent = i18n.loading;
                         container.appendChild(alertDiv);
 
-                        fetch(credentialsUrl + 'listCredentials', {
+                        secureFetch(credentialsUrl + 'listCredentials', {
                             method: 'GET',
                             headers: { 'X-Requested-With': 'XMLHttpRequest' }
                         })
@@ -181,74 +282,108 @@
                         // tbody
                         var tbody = document.createElement('tbody');
                         for (var i = 0; i < credentials.length; i++) {
-                            var c = credentials[i];
-                            var row = document.createElement('tr');
-                            row.setAttribute('data-id', c.id);
-
-                            // ID
-                            var tdId = document.createElement('td');
-                            tdId.style.fontFamily = 'monospace';
-                            tdId.textContent = c.id;
-                            row.appendChild(tdId);
-
-                            // Description
-                            var tdDesc = document.createElement('td');
-                            tdDesc.textContent = c.name || '';
-                            row.appendChild(tdDesc);
-
-                            // Kind
-                            var tdKind = document.createElement('td');
-                            var kindBadge = document.createElement('span');
-                            kindBadge.className = 'jenkins-badge';
-                            kindBadge.textContent = c.type;
-                            tdKind.appendChild(kindBadge);
-                            if (c.username) {
-                                var userSpan = document.createElement('span');
-                                userSpan.style.marginLeft = '0.5em';
-                                userSpan.style.color = '#666';
-                                userSpan.textContent = '(' + c.username + ')';
-                                tdKind.appendChild(userSpan);
-                            }
-                            row.appendChild(tdKind);
-
-                            // Actions
-                            var tdAct = document.createElement('td');
-                            tdAct.style.textAlign = 'right';
-
-                            // Show Secret button
-                            var showBtn = document.createElement('button');
-                            showBtn.className = 'jenkins-button jenkins-button--primary show-btn';
-                            showBtn.setAttribute('data-id', c.id);
-                            showBtn.setAttribute('data-type', c.typeKey);
-                            showBtn.textContent = i18n.decrypt;
-                            (function(credId, typeKey) {
-                                showBtn.onclick = function() { showCredential(credId, typeKey, this); };
-                            })(c.id, c.typeKey);
-                            tdAct.appendChild(showBtn);
-                            tdAct.appendChild(document.createTextNode(' '));
-
-                            // Delete button
-                            var delBtn = document.createElement('button');
-                            delBtn.className = 'jenkins-button jenkins-button--danger delete-btn';
-                            delBtn.setAttribute('data-id', c.id);
-                            delBtn.textContent = i18n.deleteLabel;
-                            (function(credId) {
-                                delBtn.onclick = function() { deleteCredential(credId); };
-                            })(c.id);
-                            tdAct.appendChild(delBtn);
-
-                            row.appendChild(tdAct);
-                            tbody.appendChild(row);
+                            tbody.appendChild(createCredentialRow(credentials[i]));
                         }
                         table.appendChild(tbody);
                         container.appendChild(table);
                     }
 
-                    function showCredential(id, typeKey, btn) {
+                    function createCredentialRow(c) {
+                        var row = document.createElement('tr');
+                        row.setAttribute('data-id', c.id);
+                        row.setAttribute('data-type-key', c.typeKey);
+
+                        // ID
+                        var tdId = document.createElement('td');
+                        tdId.style.fontFamily = 'monospace';
+                        tdId.textContent = c.id;
+                        row.appendChild(tdId);
+
+                        // Description
+                        var tdDesc = document.createElement('td');
+                        tdDesc.textContent = c.description || '';
+                        row.appendChild(tdDesc);
+
+                        // Kind
+                        var tdKind = document.createElement('td');
+                        var kindBadge = document.createElement('span');
+                        kindBadge.className = 'jenkins-badge';
+                        kindBadge.textContent = c.type;
+                        tdKind.appendChild(kindBadge);
+                        if (c.username) {
+                            var userSpan = document.createElement('span');
+                            userSpan.style.marginLeft = '0.5em';
+                            userSpan.style.color = '#666';
+                            userSpan.textContent = '(' + c.username + ')';
+                            tdKind.appendChild(userSpan);
+                        }
+                        row.appendChild(tdKind);
+
+                        // Actions: 解密、更新、删除
+                        var tdAct = document.createElement('td');
+                        tdAct.style.textAlign = 'right';
+                        tdAct.style.whiteSpace = 'nowrap';
+
+                        // 解密按钮
+                        var showBtn = document.createElement('button');
+                        showBtn.className = 'jenkins-button jenkins-button--primary show-btn';
+                        showBtn.setAttribute('data-id', c.id);
+                        showBtn.setAttribute('data-type', c.typeKey);
+                        showBtn.textContent = i18n.showSecret;
+                        showBtn._revealed = false;
+                        (function(credId, typeKey, btn) {
+                            btn.onclick = function() { toggleShowCredential(credId, typeKey, btn); };
+                        })(c.id, c.typeKey, showBtn);
+                        tdAct.appendChild(showBtn);
+                        tdAct.appendChild(document.createTextNode(' '));
+
+                        // 更新按钮
+                        var updateBtn = document.createElement('button');
+                        updateBtn.className = 'jenkins-button update-btn';
+                        updateBtn.setAttribute('data-id', c.id);
+                        updateBtn.setAttribute('data-type', c.typeKey);
+                        updateBtn.setAttribute('data-description', c.description || '');
+                        updateBtn.textContent = i18n.update;
+                        (function(credId, typeKey, desc) {
+                            updateBtn.onclick = function() { openUpdateDialog(credId, typeKey, desc); };
+                        })(c.id, c.typeKey, c.description || '');
+                        tdAct.appendChild(updateBtn);
+                        tdAct.appendChild(document.createTextNode(' '));
+
+                        // 删除按钮
+                        var delBtn = document.createElement('button');
+                        delBtn.className = 'jenkins-button jenkins-button--danger delete-btn';
+                        delBtn.setAttribute('data-id', c.id);
+                        delBtn.textContent = i18n.deleteLabel;
+                        (function(credId) {
+                            delBtn.onclick = function() { deleteCredential(credId); };
+                        })(c.id);
+                        tdAct.appendChild(delBtn);
+
+                        row.appendChild(tdAct);
+                        return row;
+                    }
+
+                    /**
+                     * 切换显示/隐藏凭据详情（修复隐藏后再解密无反应的问题）
+                     */
+                    function toggleShowCredential(id, typeKey, btn) {
+                        var row = btn.closest('tr');
+                        var existingDetail = row.querySelector('.cred-detail');
+
+                        if (btn._revealed && existingDetail) {
+                            // 当前是显示状态，点击隐藏
+                            existingDetail.remove();
+                            btn._revealed = false;
+                            btn.textContent = i18n.showSecret;
+                            return;
+                        }
+
+                        // 当前是隐藏状态，点击解密
                         btn.disabled = true;
                         btn.textContent = '...';
 
-                        fetch(credentialsUrl + 'decryptCredential', {
+                        secureFetch(credentialsUrl + 'decryptCredential', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -259,11 +394,9 @@
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
                             if (data.success) {
-                                var row = btn.closest('tr');
-                                var tdKind = row.children[2];
-                                // Remove previous detail if any
-                                var oldDetail = row.querySelector('.cred-detail');
-                                if (oldDetail) oldDetail.remove();
+                                // 移除旧的详情（如果有）
+                                var old = row.querySelector('.cred-detail');
+                                if (old) old.remove();
 
                                 var detailDiv = document.createElement('div');
                                 detailDiv.className = 'cred-detail';
@@ -271,44 +404,114 @@
                                 detailDiv.style.padding = '0.5em';
                                 detailDiv.style.background = '#f0f8ff';
                                 detailDiv.style.borderRadius = '4px';
+                                detailDiv.style.fontFamily = 'monospace';
+                                detailDiv.style.whiteSpace = 'pre-wrap';
+                                detailDiv.style.wordBreak = 'break-all';
 
                                 if (typeKey === 'USERNAME_PASSWORD') {
-                                    var uLabel = document.createElement('strong');
-                                    uLabel.textContent = i18n.username + ': ';
-                                    detailDiv.appendChild(uLabel);
-                                    detailDiv.appendChild(document.createTextNode(data.username));
-                                    detailDiv.appendChild(document.createElement('br'));
-                                    var pLabel = document.createElement('strong');
-                                    pLabel.textContent = i18n.secret + ': ';
-                                    detailDiv.appendChild(pLabel);
-                                    detailDiv.appendChild(document.createTextNode(data.password));
-                                } else {
-                                    var sLabel = document.createElement('strong');
-                                    sLabel.textContent = i18n.secret + ': ';
-                                    detailDiv.appendChild(sLabel);
-                                    detailDiv.appendChild(document.createTextNode(data.secret));
+                                    detailDiv.textContent = i18n.username + ': ' + data.username + '\n' + i18n.secret + ': ' + data.password;
+                                } else if (typeKey === 'SECRET_TEXT') {
+                                    detailDiv.textContent = i18n.secret + ': ' + data.secret;
+                                } else if (typeKey === 'SSH_KEY') {
+                                    detailDiv.textContent = i18n.username + ': ' + data.username + '\n' + i18n.passphrase + ': ' + (data.passphrase || '(empty)') + '\n' + i18n.privateKey + ':\n' + data.privateKey;
                                 }
 
+                                var tdKind = row.children[2];
                                 tdKind.appendChild(detailDiv);
+                                btn._revealed = true;
                                 btn.textContent = i18n.hide;
                                 btn.disabled = false;
-                                btn.onclick = function() {
-                                    var detail = row.querySelector('.cred-detail');
-                                    if (detail) {
-                                        detail.remove();
-                                        btn.textContent = i18n.decrypt;
-                                    }
-                                };
                             } else {
                                 showMessage(data.message || i18n.decryptionFailed, 'error');
-                                btn.textContent = i18n.decrypt;
+                                btn.textContent = i18n.showSecret;
                                 btn.disabled = false;
                             }
                         })
                         .catch(function(err) {
                             showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                            btn.textContent = i18n.decrypt;
+                            btn.textContent = i18n.showSecret;
                             btn.disabled = false;
+                        });
+                    }
+
+                    function openUpdateDialog(id, typeKey, description) {
+                        document.getElementById('updateId').value = id;
+                        document.getElementById('updateTypeKey').value = typeKey;
+                        document.getElementById('updateDescription').value = description;
+
+                        // 隐藏所有更新表单
+                        document.getElementById('update-form-secret-text').style.display = 'none';
+                        document.getElementById('update-form-username-password').style.display = 'none';
+                        document.getElementById('update-form-ssh-key').style.display = 'none';
+
+                        // 显示对应类型的更新表单
+                        if (typeKey === 'SECRET_TEXT') {
+                            document.getElementById('update-form-secret-text').style.display = '';
+                            document.getElementById('updateSecret').value = '';
+                        } else if (typeKey === 'USERNAME_PASSWORD') {
+                            document.getElementById('update-form-username-password').style.display = '';
+                            document.getElementById('updateUsername').value = '';
+                            document.getElementById('updatePassword').value = '';
+                        } else if (typeKey === 'SSH_KEY') {
+                            document.getElementById('update-form-ssh-key').style.display = '';
+                            document.getElementById('updateSshUsername').value = '';
+                            document.getElementById('updatePassphrase').value = '';
+                            document.getElementById('updatePrivateKey').value = '';
+                        }
+
+                        document.getElementById('update-dialog').style.display = '';
+                    }
+
+                    function closeUpdateDialog() {
+                        document.getElementById('update-dialog').style.display = 'none';
+                    }
+
+                    function submitUpdate() {
+                        var id = document.getElementById('updateId').value;
+                        var typeKey = document.getElementById('updateTypeKey').value;
+                        var description = document.getElementById('updateDescription').value;
+
+                        var endpoint, body;
+                        if (typeKey === 'SECRET_TEXT') {
+                            var secret = document.getElementById('updateSecret').value;
+                            endpoint = 'updateSecretText';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&secret=' + encodeURIComponent(secret);
+                        } else if (typeKey === 'USERNAME_PASSWORD') {
+                            var username = document.getElementById('updateUsername').value;
+                            var password = document.getElementById('updatePassword').value;
+                            endpoint = 'updateUsernamePassword';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
+                        } else if (typeKey === 'SSH_KEY') {
+                            var sshUsername = document.getElementById('updateSshUsername').value;
+                            var passphrase = document.getElementById('updatePassphrase').value;
+                            var privateKey = document.getElementById('updatePrivateKey').value;
+                            endpoint = 'updateSSHKey';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(sshUsername) + '&passphrase=' + encodeURIComponent(passphrase) + '&privateKey=' + encodeURIComponent(privateKey);
+                        } else {
+                            showMessage('Unsupported credential type', 'error');
+                            return;
+                        }
+
+                        secureFetch(credentialsUrl + endpoint, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            },
+                            body: body
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success) {
+                                closeUpdateDialog();
+                                showMessage(i18n.credentialUpdated, 'success');
+                                setTimeout(function() { window.location.reload(); }, 1000);
+                            } else {
+                                showMessage(data.message || i18n.updateFailed, 'error');
+                            }
+                        })
+                        .catch(function(err) {
+                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
                         });
                     }
 
@@ -320,31 +523,30 @@
                         var endpoint, body;
                         if (type === 'SECRET_TEXT') {
                             var secret = document.getElementById('credSecret').value.trim();
-                            if (!secret) {
-                                showMessage(i18n.secretRequired, 'error');
-                                return;
-                            }
+                            if (!secret) { showMessage(i18n.secretRequired, 'error'); return; }
                             endpoint = 'createSecretText';
                             body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&secret=' + encodeURIComponent(secret);
-                        } else {
+                        } else if (type === 'USERNAME_PASSWORD') {
                             var username = document.getElementById('credUsername').value.trim();
                             var password = document.getElementById('credPassword').value.trim();
-                            if (!username) {
-                                showMessage(i18n.usernameRequired, 'error');
-                                return;
-                            }
-                            if (!password) {
-                                showMessage(i18n.passwordRequired, 'error');
-                                return;
-                            }
+                            if (!username) { showMessage(i18n.usernameRequired, 'error'); return; }
+                            if (!password) { showMessage(i18n.passwordRequired, 'error'); return; }
                             endpoint = 'createUsernamePassword';
                             body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password);
+                        } else if (type === 'SSH_KEY') {
+                            var sshUsername = document.getElementById('credSshUsername').value.trim();
+                            var privateKey = document.getElementById('credPrivateKey').value.trim();
+                            if (!sshUsername) { showMessage(i18n.usernameRequired, 'error'); return; }
+                            if (!privateKey) { showMessage(i18n.privateKeyRequired, 'error'); return; }
+                            var passphrase = document.getElementById('credPassphrase').value.trim();
+                            endpoint = 'createSSHKey';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(sshUsername) + '&passphrase=' + encodeURIComponent(passphrase) + '&privateKey=' + encodeURIComponent(privateKey);
                         }
 
                         var createBtn = event.target;
                         createBtn.disabled = true;
 
-                        fetch(credentialsUrl + endpoint, {
+                        secureFetch(credentialsUrl + endpoint, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -373,7 +575,7 @@
                             return;
                         }
 
-                        fetch(credentialsUrl + 'deleteCredential', {
+                        secureFetch(credentialsUrl + 'deleteCredential', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -407,6 +609,11 @@
                 //]]>
                 </script>
             </st:once>
+                </j:when>
+                <j:otherwise>
+                    <div class="jenkins-alert jenkins-alert-warning">${%Permission denied. You do not have access to manage credentials for this folder.}</div>
+                </j:otherwise>
+            </j:choose>
         </l:main-panel>
     </l:layout>
 </j:jelly>
