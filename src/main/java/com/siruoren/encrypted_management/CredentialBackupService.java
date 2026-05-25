@@ -255,6 +255,20 @@ public class CredentialBackupService {
     }
 
     /**
+     * AES-256-GCM加密（公开方法，供ZIP导出等场景使用）
+     */
+    public static String encryptData(String plaintext, String password) throws Exception {
+        return encrypt(plaintext, password);
+    }
+
+    /**
+     * AES-256-GCM解密（公开方法，供ZIP导入等场景使用）
+     */
+    public static String decryptData(String encryptedBase64, String password) throws Exception {
+        return decrypt(encryptedBase64, password);
+    }
+
+    /**
      * AES-256-GCM加密
      */
     private static String encrypt(String plaintext, String password) throws Exception {

@@ -2,13 +2,23 @@
 
 All notable changes to the Encrypted Management plugin will be documented in this file.
 
-## [1.0.1] - 2025-05-25
+## [1.0.1] - 2026-05-25
+
+### Added
+
+- **目录任务凭据分层存储**：Jenkins 根目录下额外加密存储支持按目录层级保存凭据，以目录任务的 `fullName` 路径作为子目录结构，保持与 Jenkins 目录任务层级一致
+
+- **全量 ZIP 导入导出**：Jenkins 首页「系统凭证管理」支持导入导出所有目录任务的凭据并打包为 ZIP 包
+  - ZIP 包结构与 Jenkins 目录任务路径保持一致
+  - 导出时使用 AES-256-GCM 加密保护
+  - 导入时自动按层级结构恢复到对应目录任务
+  - 支持覆盖现有凭据选项
 
 ### Fixed
 
 - **文件夹凭据列表泄露系统级凭据**：修复目录任务下的凭证列表除了显示当前目录任务的凭据外，还错误地显示了 Jenkins 系统级凭据的问题。`CredentialsProvider.lookupCredentials()` 会递归返回父级凭据，现改为直接从文件夹自身的 `CredentialsStore` 获取凭据，确保只显示当前文件夹存储的凭据。影响范围：凭据列表、凭据查找、凭据导出、外部存储同步
 
-## [1.0.0] - 2025-05-24
+## [1.0.0] - 2025-05-25
 
 ### Added
 

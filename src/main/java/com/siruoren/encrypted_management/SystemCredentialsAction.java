@@ -23,14 +23,20 @@ import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.interceptor.RequirePOST;
 
+import com.cloudbees.hudson.plugins.folder.Folder;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 /**
  * Jenkins根目录系统级凭据管理Action
@@ -818,46 +824,95 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("External storage is not enabled");
         }
 
-        final List<StandardCredentials> creds = new ArrayList<>(CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList()));
-        final String folderName = "system";
+        // 收集所有目录任务及其凭据（快照）
+        final java.util.LinkedHashMap<String, List<StandardCredentials>> allFolderCreds = collectAllFolderCredentials();
 
         getAsyncExecutor().submit(new Runnable() {
             @Override
             public void run() {
                 try {
                     ExternalStorage storage = manager.getStorage();
+                    int totalSynced = 0;
 
-                    // 构建所有凭据的JSON数据
+                    for (Map.Entry<String, List<StandardCredentials>> entry : allFolderCreds.entrySet()) {
+                        String folderName = entry.getKey();
+                        List<StandardCredentials> creds = entry.getValue();
+
+                        try {
+                            net.sf.json.JSONArray credentialsArray = new net.sf.json.JSONArray();
+                            for (StandardCredentials c : creds) {
+                                try {
+                                    JSONObject credData = serializeCredential(c);
+                                    credentialsArray.add(credData);
+                                } catch (Exception e) {
+                                    LOGGER.log(Level.WARNING, "Failed to serialize credential: " + c.getId(), e);
+                                }
+                            }
+
+                            JSONObject allData = new JSONObject();
+                            allData.put("version", "1.0");
+                            allData.put("folder", folderName);
+                            allData.put("exportTime", java.time.LocalDateTime.now().toString());
+                            allData.put("count", credentialsArray.size());
+                            allData.put("credentials", credentialsArray);
+
+                            storage.saveAllCredentials(folderName, allData);
+                            totalSynced += credentialsArray.size();
+                        } catch (Exception e) {
+                            LOGGER.log(Level.WARNING, "Failed to sync credentials for folder: " + folderName, e);
+                        }
+                    }
+
+                    AuditLogger.log("system", "SYNC_TO_EXTERNAL", "*", "*", "synced " + totalSynced + " credentials across " + allFolderCreds.size() + " folders");
+                    LOGGER.info("Async sync completed: " + totalSynced + " credentials synced across " + allFolderCreds.size() + " folders");
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Failed to sync all credentials to external storage", e);
+                }
+            }
+        });
+
+        JSONObject result = new JSONObject();
+        result.put("success", true);
+        result.put("message", "Sync started in background for " + allFolderCreds.size() + " folders");
+        result.put("folderCount", allFolderCreds.size());
+        return jsonResult(result);
+    }
+
+    /**
+     * API: 导出所有目录任务的凭据为加密ZIP包
+     * ZIP包结构与Jenkins目录任务路径保持一致
+     * 例如: dev/team/credentials.json.enc, jenkins_root.json.enc
+     */
+    @RequirePOST
+    public HttpResponse doExportAllAsZip(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
+
+        String password = req.getParameter("password");
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Encryption password is required");
+        }
+        if (password.length() < 8) {
+            return errorResponse("Password must be at least 8 characters");
+        }
+
+        try {
+            java.util.LinkedHashMap<String, List<StandardCredentials>> allFolderCreds = collectAllFolderCredentials();
+
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            try (ZipOutputStream zos = new ZipOutputStream(baos)) {
+                for (Map.Entry<String, List<StandardCredentials>> entry : allFolderCreds.entrySet()) {
+                    String folderName = entry.getKey();
+                    List<StandardCredentials> creds = entry.getValue();
+
                     net.sf.json.JSONArray credentialsArray = new net.sf.json.JSONArray();
                     for (StandardCredentials c : creds) {
                         try {
-                            JSONObject credData = new JSONObject();
-                            credData.put("id", c.getId());
-                            credData.put("description", c.getDescription());
-                            credData.put("scope", c.getScope().name());
-                            credData.put("type", getCredentialsTypeKey(c));
-
-                            if (c instanceof UsernamePasswordCredentials) {
-                                UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
-                                credData.put("username", upc.getUsername());
-                                credData.put("password", Secret.toString(upc.getPassword()));
-                            } else if (c instanceof StringCredentials) {
-                                credData.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
-                            } else if (c instanceof BasicSSHUserPrivateKey) {
-                                BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
-                                credData.put("username", ssh.getUsername());
-                                credData.put("passphrase", Secret.toString(ssh.getPassphrase()));
-                                credData.put("privateKey", ssh.getPrivateKey());
-                            }
-
-                            credentialsArray.add(credData);
+                            credentialsArray.add(serializeCredential(c));
                         } catch (Exception e) {
                             LOGGER.log(Level.WARNING, "Failed to serialize credential: " + c.getId(), e);
                         }
                     }
 
-                    // 构建完整的导出JSON，与CredentialBackupService格式一致
                     JSONObject allData = new JSONObject();
                     allData.put("version", "1.0");
                     allData.put("folder", folderName);
@@ -865,24 +920,235 @@ public class SystemCredentialsAction implements RootAction {
                     allData.put("count", credentialsArray.size());
                     allData.put("credentials", credentialsArray);
 
-                    // 保存为jenkins_root.json
-                    storage.saveAllCredentials(folderName, allData);
+                    // 加密凭据数据
+                    String encryptedData = CredentialBackupService.encryptData(allData.toString(), password);
 
-                    AuditLogger.log(folderName, "SYNC_TO_EXTERNAL", "*", "*", "synced " + credentialsArray.size() + " credentials");
-                    LOGGER.info("Async sync completed: " + credentialsArray.size() + " system credentials synced");
-                } catch (Exception e) {
-                    LOGGER.log(Level.SEVERE, "Failed to sync system credentials to external storage", e);
+                    // ZIP内路径与Jenkins目录层级一致
+                    String zipEntryName;
+                    if ("system".equals(folderName)) {
+                        zipEntryName = "jenkins_root.json.enc";
+                    } else {
+                        zipEntryName = folderName + "/credentials.json.enc";
+                    }
+
+                    ZipEntry ze = new ZipEntry(zipEntryName);
+                    zos.putNextEntry(ze);
+                    zos.write(encryptedData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    zos.closeEntry();
                 }
             }
-        });
 
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("message", "Sync started in background for " + creds.size() + " credentials");
-        return jsonResult(result);
+            final byte[] zipBytes = baos.toByteArray();
+            final String filename = "jenkins-all-credentials-"
+                    + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
+                    + ".zip";
+
+            AuditLogger.log("system", "EXPORT_ALL_ZIP", "*", "*", "exported " + allFolderCreds.size() + " folders as ZIP");
+
+            return new HttpResponse() {
+                @Override
+                public void generateResponse(StaplerRequest req, StaplerResponse rsp, Object node) throws IOException {
+                    rsp.setContentType("application/octet-stream");
+                    rsp.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+                    rsp.getOutputStream().write(zipBytes);
+                }
+            };
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to export all credentials as ZIP", e);
+            return errorResponse("Failed to export credentials: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 从加密ZIP包导入所有目录任务的凭据
+     * ZIP包结构与Jenkins目录任务路径保持一致
+     */
+    @RequirePOST
+    public HttpResponse doImportAllFromZip(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
+
+        String password = req.getParameter("password");
+        String encryptedZipData = req.getParameter("data");
+        String overwriteParam = req.getParameter("overwrite");
+
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Decryption password is required");
+        }
+        if (encryptedZipData == null || encryptedZipData.isEmpty()) {
+            return errorResponse("ZIP data is required");
+        }
+
+        boolean overwrite = "true".equals(overwriteParam);
+
+        try {
+            // 前端通过FileReader读取ZIP文件并Base64编码
+            byte[] zipBytes = java.util.Base64.getDecoder().decode(encryptedZipData);
+            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(zipBytes);
+
+            int totalImported = 0;
+            int totalUpdated = 0;
+            int totalSkipped = 0;
+            int totalFailed = 0;
+            java.util.List<String> processedFolders = new java.util.ArrayList<>();
+
+            try (ZipInputStream zis = new ZipInputStream(bais)) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    try {
+                        // 读取ZIP条目内容
+                        java.io.ByteArrayOutputStream entryBaos = new java.io.ByteArrayOutputStream();
+                        byte[] buffer = new byte[4096];
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            entryBaos.write(buffer, 0, len);
+                        }
+                        String encryptedContent = entryBaos.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+
+                        // 解密
+                        String decryptedJson = CredentialBackupService.decryptData(encryptedContent, password);
+                        JSONObject importObj = JSONObject.fromObject(decryptedJson);
+
+                        // 确定目标ItemGroup
+                        String entryPath = entry.getName();
+                        ItemGroup<?> targetItemGroup;
+                        if ("jenkins_root.json.enc".equals(entryPath)) {
+                            targetItemGroup = getJenkinsInstance();
+                        } else {
+                            // 从路径提取folderName: "dev/team/credentials.json.enc" → "dev/team"
+                            String folderFullName = entryPath.replace("/credentials.json.enc", "").replace("\\credentials.json.enc", "");
+                            targetItemGroup = findFolderByFullName(folderFullName);
+                            if (targetItemGroup == null) {
+                                LOGGER.warning("Folder not found for ZIP entry: " + entryPath + ", skipping");
+                                totalFailed++;
+                                continue;
+                            }
+                        }
+
+                        // 导入凭据
+                        JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
+                                targetItemGroup, importObj, overwrite);
+                        totalImported += importResult.optInt("imported", 0);
+                        totalUpdated += importResult.optInt("updated", 0);
+                        totalSkipped += importResult.optInt("skipped", 0);
+                        totalFailed += importResult.optInt("failed", 0);
+                        processedFolders.add(entryPath);
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Failed to import ZIP entry: " + entry.getName(), e);
+                        totalFailed++;
+                    }
+                    zis.closeEntry();
+                }
+            }
+
+            AuditLogger.log("system", "IMPORT_ALL_ZIP", "*", "*",
+                    "imported from ZIP: " + processedFolders.size() + " folders, imported=" + totalImported
+                            + ", updated=" + totalUpdated + ", skipped=" + totalSkipped + ", failed=" + totalFailed);
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("folderCount", processedFolders.size());
+            result.put("imported", totalImported);
+            result.put("updated", totalUpdated);
+            result.put("skipped", totalSkipped);
+            result.put("failed", totalFailed);
+            result.put("folders", processedFolders);
+            result.put("message", "Import completed: " + totalImported + " imported, " + totalUpdated + " updated, " + totalSkipped + " skipped, " + totalFailed + " failed");
+            return jsonResult(result);
+        } catch (Exception e) {
+            if (e.getCause() instanceof javax.crypto.AEADBadTagException) {
+                return errorResponse("Decryption failed: wrong password or corrupted data");
+            }
+            LOGGER.log(Level.SEVERE, "Failed to import credentials from ZIP", e);
+            return errorResponse("Failed to import credentials: " + e.getMessage());
+        }
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 收集所有目录任务及其凭据（仅自身存储的凭据，不包含继承的）
+     * 包括系统级凭据和所有Folder的凭据
+     */
+    private java.util.LinkedHashMap<String, List<StandardCredentials>> collectAllFolderCredentials() {
+        java.util.LinkedHashMap<String, List<StandardCredentials>> result = new java.util.LinkedHashMap<>();
+
+        // 系统级凭据
+        List<StandardCredentials> systemCreds = getStoreCredentials(getJenkinsInstance());
+        if (!systemCreds.isEmpty()) {
+            result.put("system", systemCreds);
+        }
+
+        // 所有Folder的凭据
+        for (Folder folder : Jenkins.get().getAllItems(Folder.class)) {
+            List<StandardCredentials> folderCreds = getStoreCredentials(folder);
+            if (!folderCreds.isEmpty()) {
+                result.put(folder.getFullName(), folderCreds);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 获取指定ItemGroup自身凭据存储中的所有凭据（不包含继承的）
+     */
+    private List<StandardCredentials> getStoreCredentials(ItemGroup<?> itemGroup) {
+        List<StandardCredentials> creds = new ArrayList<>();
+        CredentialsStore store = null;
+        for (CredentialsStore s : CredentialsProvider.lookupStores(itemGroup)) {
+            if (s.getContext() == itemGroup) {
+                store = s;
+                break;
+            }
+        }
+        if (store != null) {
+            for (Domain domain : store.getDomains()) {
+                for (com.cloudbees.plugins.credentials.Credentials c : store.getCredentials(domain)) {
+                    if (c instanceof StandardCredentials) {
+                        creds.add((StandardCredentials) c);
+                    }
+                }
+            }
+        }
+        return creds;
+    }
+
+    /**
+     * 序列化凭据为JSON对象
+     */
+    private JSONObject serializeCredential(StandardCredentials c) {
+        JSONObject credData = new JSONObject();
+        credData.put("id", c.getId());
+        credData.put("description", c.getDescription());
+        credData.put("scope", c.getScope().name());
+        credData.put("type", getCredentialsTypeKey(c));
+
+        if (c instanceof UsernamePasswordCredentials) {
+            UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
+            credData.put("username", upc.getUsername());
+            credData.put("password", Secret.toString(upc.getPassword()));
+        } else if (c instanceof StringCredentials) {
+            credData.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
+        } else if (c instanceof BasicSSHUserPrivateKey) {
+            BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
+            credData.put("username", ssh.getUsername());
+            credData.put("passphrase", Secret.toString(ssh.getPassphrase()));
+            credData.put("privateKey", ssh.getPrivateKey());
+        }
+        return credData;
+    }
+
+    /**
+     * 根据fullName查找Folder对象
+     */
+    private Folder findFolderByFullName(String fullName) {
+        for (Folder folder : Jenkins.get().getAllItems(Folder.class)) {
+            if (folder.getFullName().equals(fullName)) {
+                return folder;
+            }
+        }
+        return null;
+    }
 
     private String getCredentialsTypeName(StandardCredentials c) {
         if (c instanceof UsernamePasswordCredentials) {

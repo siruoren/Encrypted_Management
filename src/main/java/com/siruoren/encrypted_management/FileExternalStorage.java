@@ -85,15 +85,19 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     /**
-     * 根据文件夹名生成JSON文件名
-     * 系统级凭据使用jenkins_root.json
-     * 目录任务使用目录全名（/替换为_）.json
+     * 根据文件夹名获取凭据文件
+     * 系统级凭据使用 jenkins_root.json（存储根目录下）
+     * 目录任务使用目录全名作为子目录层级，凭据文件为 credentials.json
+     * 例如: folderName="dev/team" → storageDir/dev/team/credentials.json
      */
-    private String getFileName(String folderName) {
+    private File getCredFile(String folderName) {
+        File currentStorageDir = storageDir; // 快照读取
         if (folderName == null || folderName.isEmpty() || "system".equals(folderName)) {
-            return "jenkins_root.json";
+            return new File(currentStorageDir, "jenkins_root.json");
         }
-        return sanitizePath(folderName) + ".json";
+        // 按目录层级创建子目录
+        File subDir = new File(currentStorageDir, folderName);
+        return new File(subDir, "credentials.json");
     }
 
     @Override
@@ -128,9 +132,12 @@ public class FileExternalStorage implements ExternalStorage {
             }
 
             // 写入临时文件后原子重命名，防止写入中断导致数据损坏
-            String fileName = getFileName(folderName);
-            File credFile = new File(currentStorageDir, fileName);
-            File tempFile = new File(currentStorageDir, fileName + ".tmp");
+            File credFile = getCredFile(folderName);
+            File parentDir = credFile.getParentFile();
+            if (!parentDir.exists()) {
+                parentDir.mkdirs();
+            }
+            File tempFile = new File(parentDir, credFile.getName() + ".tmp");
             try (Writer writer = new OutputStreamWriter(new FileOutputStream(tempFile), StandardCharsets.UTF_8)) {
                 writer.write(dataToWrite);
             }
@@ -144,7 +151,7 @@ public class FileExternalStorage implements ExternalStorage {
                 tempFile.delete();
             }
 
-            LOGGER.info("Saved credentials to external storage: " + fileName
+            LOGGER.info("Saved credentials to external storage: " + credFile.getAbsolutePath()
                     + (currentPassword != null ? " (encrypted)" : ""));
         } finally {
             lock.unlock();
@@ -156,9 +163,7 @@ public class FileExternalStorage implements ExternalStorage {
         ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
-            File currentStorageDir = storageDir; // 快照读取
-            String fileName = getFileName(folderName);
-            File credFile = new File(currentStorageDir, fileName);
+            File credFile = getCredFile(folderName);
             if (!credFile.exists()) {
                 return null;
             }
@@ -186,12 +191,22 @@ public class FileExternalStorage implements ExternalStorage {
         ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
-            File currentStorageDir = storageDir; // 快照读取
-            String fileName = getFileName(folderName);
-            File credFile = new File(currentStorageDir, fileName);
+            File credFile = getCredFile(folderName);
             if (credFile.exists()) {
                 if (!credFile.delete()) {
                     throw new IOException("Failed to delete credential file: " + credFile.getAbsolutePath());
+                }
+                // 删除空父目录（向上递归清理，直到存储根目录）
+                File parent = credFile.getParentFile();
+                File currentStorageDir = storageDir; // 快照读取
+                while (parent != null && !parent.equals(currentStorageDir)) {
+                    File[] remaining = parent.listFiles();
+                    if (remaining == null || remaining.length == 0) {
+                        parent.delete();
+                        parent = parent.getParentFile();
+                    } else {
+                        break;
+                    }
                 }
             }
             // 清理锁映射，防止内存泄漏
@@ -208,18 +223,35 @@ public class FileExternalStorage implements ExternalStorage {
             return Collections.emptyList();
         }
 
-        File[] files = currentStorageDir.listFiles((dir, name) -> name.endsWith(".json"));
-        if (files == null) {
-            return Collections.emptyList();
-        }
-
         List<String> folders = new ArrayList<>();
-        for (File f : files) {
-            String name = f.getName();
-            String folderName = name.substring(0, name.length() - 5); // 去掉.json
-            folders.add(folderName);
+        // 检查系统级凭据
+        if (new File(currentStorageDir, "jenkins_root.json").exists()) {
+            folders.add("system");
         }
+        // 递归查找所有包含 credentials.json 的子目录
+        listFoldersRecursive(currentStorageDir, currentStorageDir, folders);
         return folders;
+    }
+
+    /**
+     * 递归查找包含 credentials.json 的子目录，计算相对路径作为 folderName
+     */
+    private void listFoldersRecursive(File baseDir, File currentDir, List<String> folders) {
+        File[] children = currentDir.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isDirectory()) {
+                File credFile = new File(child, "credentials.json");
+                if (credFile.exists()) {
+                    String relativePath = baseDir.toPath().relativize(child.toPath()).toString();
+                    // 统一使用 / 作为分隔符
+                    relativePath = relativePath.replace(File.separatorChar, '/');
+                    folders.add(relativePath);
+                }
+                // 继续递归查找子目录
+                listFoldersRecursive(baseDir, child, folders);
+            }
+        }
     }
 
     @Override
@@ -294,11 +326,4 @@ public class FileExternalStorage implements ExternalStorage {
         return new SecretKeySpec(keyBytes, "AES");
     }
 
-    /**
-     * 清理路径，防止路径遍历攻击
-     */
-    private String sanitizePath(String path) {
-        if (path == null || path.isEmpty()) return "default";
-        return path.replaceAll("[/\\\\.]", "_").replaceAll("[^a-zA-Z0-9_\\-]", "");
-    }
 }

@@ -19,6 +19,8 @@
                 <button class="jenkins-button" onclick="openAuditLogDialog()">${%Audit Log}</button>
                 <button class="jenkins-button" onclick="openExportDialog()">${%Export Credentials}</button>
                 <button class="jenkins-button" onclick="openImportDialog()">${%Import Credentials}</button>
+                <button class="jenkins-button" onclick="openExportAllZipDialog()">${%Export All (ZIP)}</button>
+                <button class="jenkins-button" onclick="openImportAllZipDialog()">${%Import All (ZIP)}</button>
                 <button class="jenkins-button" onclick="openStorageDialog()">${%External Storage}</button>
             </div>
 
@@ -332,6 +334,51 @@
                     <div class="jenkins-form-item" style="margin-top:1em;">
                         <button class="jenkins-button jenkins-button--primary" onclick="syncToExternal()">${%Sync to External Storage}</button>
                         <button class="jenkins-button" onclick="closeDialog('storage-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== 全量导出ZIP弹窗 ==================== -->
+            <div id="export-all-zip-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
+                    <h2>${%Export All Folders (ZIP)}</h2>
+                    <p style="color:#666; font-size:0.9em;">${%Export all folder credentials as an encrypted ZIP file. ZIP structure matches Jenkins folder hierarchy.}</p>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Encryption Password}</div>
+                        <div class="jenkins-form-control">
+                            <input type="password" id="exportAllZipPassword" class="jenkins-input" placeholder="${%At least 8 characters}"/>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <button class="jenkins-button jenkins-button--primary" onclick="doExportAllZip()">${%Download ZIP}</button>
+                        <button class="jenkins-button" onclick="closeDialog('export-all-zip-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== 全量导入ZIP弹窗 ==================== -->
+            <div id="import-all-zip-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
+                    <h2>${%Import All Folders (ZIP)}</h2>
+                    <p style="color:#666; font-size:0.9em;">${%Import credentials from an encrypted ZIP file. ZIP structure must match Jenkins folder hierarchy. Folders that do not exist will be skipped.}</p>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Encryption Password}</div>
+                        <div class="jenkins-form-control">
+                            <input type="password" id="importAllZipPassword" class="jenkins-input" placeholder="${%Enter decryption password}"/>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%ZIP File}</div>
+                        <div class="jenkins-form-control">
+                            <input type="file" id="importAllZipFile" class="jenkins-input" accept=".zip"/>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <label><input type="checkbox" id="importAllZipOverwrite"/> ${%Overwrite existing credentials}</label>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <button class="jenkins-button jenkins-button--primary" onclick="doImportAllZip()">${%Import}</button>
+                        <button class="jenkins-button" onclick="closeDialog('import-all-zip-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
                     </div>
                 </div>
             </div>
@@ -1151,6 +1198,99 @@
                         .catch(function(err) {
                             showMessage(i18n.requestFailed + ': ' + err.message, 'error');
                         });
+                    }
+
+                    // ==================== 全量导出ZIP ====================
+
+                    function openExportAllZipDialog() {
+                        document.getElementById('exportAllZipPassword').value = '';
+                        document.getElementById('export-all-zip-dialog').style.display = '';
+                    }
+
+                    function doExportAllZip() {
+                        var password = document.getElementById('exportAllZipPassword').value.trim();
+                        if (!password) {
+                            showMessage(i18n.passwordRequired, 'error');
+                            return;
+                        }
+                        if (password.length < 8) {
+                            showMessage(i18n.passwordMinLength, 'error');
+                            return;
+                        }
+                        // 使用表单提交触发浏览器下载
+                        var form = document.createElement('form');
+                        form.method = 'POST';
+                        form.action = credentialsUrl + 'exportAllAsZip';
+                        form.style.display = 'none';
+                        var csrfField = document.createElement('input');
+                        csrfField.type = 'hidden';
+                        csrfField.name = crumbHeaderName;
+                        csrfField.value = crumbValue;
+                        form.appendChild(csrfField);
+                        var pwField = document.createElement('input');
+                        pwField.type = 'hidden';
+                        pwField.name = 'password';
+                        pwField.value = password;
+                        form.appendChild(pwField);
+                        document.body.appendChild(form);
+                        form.submit();
+                        document.body.removeChild(form);
+                        closeDialog('export-all-zip-dialog');
+                    }
+
+                    // ==================== 全量导入ZIP ====================
+
+                    function openImportAllZipDialog() {
+                        document.getElementById('importAllZipPassword').value = '';
+                        document.getElementById('importAllZipFile').value = '';
+                        document.getElementById('importAllZipOverwrite').checked = false;
+                        document.getElementById('import-all-zip-dialog').style.display = '';
+                    }
+
+                    function doImportAllZip() {
+                        var password = document.getElementById('importAllZipPassword').value.trim();
+                        var fileInput = document.getElementById('importAllZipFile');
+                        var overwrite = document.getElementById('importAllZipOverwrite').checked;
+
+                        if (!password) {
+                            showMessage(i18n.passwordRequired, 'error');
+                            return;
+                        }
+                        if (!fileInput.files || fileInput.files.length === 0) {
+                            showMessage(i18n.encryptedDataRequired, 'error');
+                            return;
+                        }
+
+                        var reader = new FileReader();
+                        reader.onload = function(e) {
+                            var base64Data = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                            var body = 'password=' + encodeURIComponent(password)
+                                + '&data=' + encodeURIComponent(base64Data)
+                                + '&overwrite=' + overwrite;
+
+                            secureFetch(credentialsUrl + 'importAllFromZip', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/x-www-form-urlencoded',
+                                    [crumbHeaderName]: crumbValue
+                                },
+                                body: body
+                            })
+                            .then(function(response) { return response.json(); })
+                            .then(function(data) {
+                                if (data.success) {
+                                    closeDialog('import-all-zip-dialog');
+                                    showMessage(data.message, 'success');
+                                    loadCredentials();
+                                } else {
+                                    showMessage(data.message || i18n.importFailed, 'error');
+                                }
+                            })
+                            .catch(function(err) {
+                                showMessage(i18n.requestFailed + ': ' + err.message, 'error');
+                            });
+                        };
+                        reader.readAsArrayBuffer(fileInput.files[0]);
                     }
                 //]]>
                 </script>
