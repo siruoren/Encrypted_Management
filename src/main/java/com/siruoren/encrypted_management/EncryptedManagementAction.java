@@ -88,6 +88,14 @@ public class EncryptedManagementAction implements Action {
         return folder.hasPermission(Item.CONFIGURE);
     }
 
+    /**
+     * API文档页面路由
+     */
+    public void doApiDoc(StaplerRequest req, StaplerResponse rsp) throws IOException, javax.servlet.ServletException {
+        folder.checkPermission(Item.CONFIGURE);
+        req.getView(this, "api-doc").forward(req, rsp);
+    }
+
     public Folder getFolder() {
         return folder;
     }

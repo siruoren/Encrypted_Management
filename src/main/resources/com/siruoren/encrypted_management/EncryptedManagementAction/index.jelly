@@ -649,6 +649,7 @@
                         var tdKind = document.createElement('td');
                         var kindBadge = document.createElement('span');
                         kindBadge.className = 'jenkins-badge';
+                        kindBadge.style.cssText = 'background:#e8e8e8;color:#333;padding:2px 8px;border-radius:3px;font-size:0.85em;';
                         kindBadge.textContent = c.type;
                         tdKind.appendChild(kindBadge);
                         if (c.username) {
