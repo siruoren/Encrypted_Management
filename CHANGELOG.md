@@ -2,6 +2,12 @@
 
 All notable changes to the Encrypted Management plugin will be documented in this file.
 
+## [1.0.1] - 2025-05-25
+
+### Fixed
+
+- **文件夹凭据列表泄露系统级凭据**：修复目录任务下的凭证列表除了显示当前目录任务的凭据外，还错误地显示了 Jenkins 系统级凭据的问题。`CredentialsProvider.lookupCredentials()` 会递归返回父级凭据，现改为直接从文件夹自身的 `CredentialsStore` 获取凭据，确保只显示当前文件夹存储的凭据。影响范围：凭据列表、凭据查找、凭据导出、外部存储同步
+
 ## [1.0.0] - 2025-05-24
 
 ### Added

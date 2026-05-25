@@ -117,12 +117,28 @@ public class EncryptedManagementAction implements Action {
     }
 
     /**
-     * 根据ID查找凭据
+     * 获取当前文件夹自身凭据存储中的所有凭据（不包含从父级继承的凭据）
+     */
+    private List<StandardCredentials> getFolderCredentials() {
+        List<StandardCredentials> result = new ArrayList<>();
+        CredentialsStore store = getFolderStore();
+        if (store != null) {
+            for (Domain domain : store.getDomains()) {
+                for (com.cloudbees.plugins.credentials.Credentials c : store.getCredentials(domain)) {
+                    if (c instanceof StandardCredentials) {
+                        result.add((StandardCredentials) c);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 根据ID查找凭据（仅在当前文件夹自身的存储中查找，不包含系统级凭据）
      */
     private StandardCredentials findCredentialById(String id) {
-        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList());
-        for (StandardCredentials c : creds) {
+        for (StandardCredentials c : getFolderCredentials()) {
             if (c.getId().equals(id)) {
                 return c;
             }
@@ -137,8 +153,7 @@ public class EncryptedManagementAction implements Action {
         folder.checkPermission(Item.CONFIGURE);
 
         JSONArray arr = new JSONArray();
-        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList());
+        List<StandardCredentials> creds = getFolderCredentials();
 
         for (StandardCredentials c : creds) {
             JSONObject obj = new JSONObject();
@@ -1156,9 +1171,8 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("External storage is not enabled");
         }
 
-        // 快照读取凭据列表，避免长时间持有引用
-        final List<StandardCredentials> creds = new ArrayList<>(CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) folder, null, Collections.emptyList()));
+        // 快照读取凭据列表，避免长时间持有引用（仅当前文件夹自身的凭据）
+        final List<StandardCredentials> creds = new ArrayList<>(getFolderCredentials());
         final String folderName = folder.getFullName();
 
         // 异步执行同步操作，不阻塞请求线程

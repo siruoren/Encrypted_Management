@@ -50,10 +50,9 @@ public class CredentialBackupService {
      * @return 加密后的Base64字符串
      */
     public static String exportCredentials(ItemGroup<?> itemGroup, String encryptionPassword) throws Exception {
-        // 收集所有凭据
+        // 收集当前存储自身的凭据（不包含从父级继承的凭据）
         JSONArray credentialsArray = new JSONArray();
-        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, itemGroup, null, java.util.Collections.emptyList());
+        List<StandardCredentials> creds = getStoreCredentials(itemGroup);
 
         for (StandardCredentials c : creds) {
             JSONObject credObj = new JSONObject();
@@ -219,13 +218,35 @@ public class CredentialBackupService {
     }
 
     /**
-     * 根据ID查找凭据
+     * 获取指定ItemGroup自身凭据存储中的所有凭据（不包含从父级继承的凭据）
+     */
+    private static List<StandardCredentials> getStoreCredentials(ItemGroup<?> itemGroup) {
+        List<StandardCredentials> result = new java.util.ArrayList<>();
+        CredentialsStore store = null;
+        for (CredentialsStore s : CredentialsProvider.lookupStores(itemGroup)) {
+            if (s.getContext() == itemGroup) {
+                store = s;
+                break;
+            }
+        }
+        if (store != null) {
+            for (Domain domain : store.getDomains()) {
+                for (com.cloudbees.plugins.credentials.Credentials c : store.getCredentials(domain)) {
+                    if (c instanceof StandardCredentials) {
+                        result.add((StandardCredentials) c);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 根据ID查找凭据（仅在当前存储自身中查找，不包含从父级继承的凭据）
      */
     private static StandardCredentials findCredentialById(ItemGroup<?> itemGroup, String id) {
         if (id == null || id.isEmpty()) return null;
-        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, itemGroup, null, java.util.Collections.emptyList());
-        for (StandardCredentials c : creds) {
+        for (StandardCredentials c : getStoreCredentials(itemGroup)) {
             if (c.getId().equals(id)) {
                 return c;
             }
