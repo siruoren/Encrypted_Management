@@ -1,6 +1,5 @@
 package com.siruoren.encrypted_management;
 
-import com.cloudbees.hudson.plugins.folder.Folder;
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
@@ -10,12 +9,11 @@ import com.cloudbees.plugins.credentials.common.UsernamePasswordCredentials;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import hudson.Extension;
-import hudson.model.Action;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
+import hudson.model.RootAction;
 import hudson.util.Secret;
 import jenkins.model.Jenkins;
-import jenkins.model.TransientActionFactory;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
@@ -25,10 +23,8 @@ import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.interceptor.RequirePOST;
 
-import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -39,52 +35,52 @@ import java.util.logging.Logger;
 /**
  * Jenkins根目录系统级凭据管理Action
  * 仅管理员可见，管理Jenkins系统级凭据
+ * 使用RootAction直接注册到Jenkins根侧边栏
  */
-public class SystemCredentialsAction implements Action {
+@Extension
+public class SystemCredentialsAction implements RootAction {
     private static final Logger LOGGER = Logger.getLogger(SystemCredentialsAction.class.getName());
 
     private static ExecutorService getAsyncExecutor() {
         return ThreadPoolManager.getInstance().getExecutor();
     }
 
-    private final Jenkins jenkins;
-
-    public SystemCredentialsAction(@Nonnull Jenkins jenkins) {
-        this.jenkins = jenkins;
+    private Jenkins getJenkinsInstance() {
+        return Jenkins.get();
     }
 
     @Override
     public String getIconFileName() {
-        return jenkins.hasPermission(Jenkins.ADMINISTER) ? "symbol-credentials plugin-encrypted-management" : null;
+        return getJenkinsInstance().hasPermission(Jenkins.ADMINISTER) ? "symbol-credentials plugin-encrypted-management" : null;
     }
 
     @Override
     public String getDisplayName() {
-        return jenkins.hasPermission(Jenkins.ADMINISTER) ? Messages.SystemCredentialsAction_DisplayName() : null;
+        return getJenkinsInstance().hasPermission(Jenkins.ADMINISTER) ? Messages.SystemCredentialsAction_DisplayName() : null;
     }
 
     @Override
     public String getUrlName() {
-        return jenkins.hasPermission(Jenkins.ADMINISTER) ? "System_Credentials_Management" : null;
+        return getJenkinsInstance().hasPermission(Jenkins.ADMINISTER) ? "System_Credentials_Management" : null;
     }
 
     /**
      * 检查当前用户是否是管理员
      */
     public boolean hasPermission() {
-        return jenkins.hasPermission(Jenkins.ADMINISTER);
+        return getJenkinsInstance().hasPermission(Jenkins.ADMINISTER);
     }
 
     /**
      * API文档页面路由
      */
     public void doApiDoc(StaplerRequest req, StaplerResponse rsp) throws IOException, javax.servlet.ServletException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
         req.getView(this, "api-doc").forward(req, rsp);
     }
 
     public Jenkins getJenkins() {
-        return jenkins;
+        return getJenkinsInstance();
     }
 
     /**
@@ -92,7 +88,7 @@ public class SystemCredentialsAction implements Action {
      * Jenkins 实例同样有 displayName、url、fullName 属性
      */
     public Object getContext() {
-        return jenkins;
+        return getJenkinsInstance();
     }
 
     /**
@@ -110,8 +106,8 @@ public class SystemCredentialsAction implements Action {
      * 获取Jenkins系统凭据存储
      */
     private CredentialsStore getSystemStore() {
-        for (CredentialsStore store : CredentialsProvider.lookupStores(jenkins)) {
-            if (store.getContext() == jenkins) {
+        for (CredentialsStore store : CredentialsProvider.lookupStores(getJenkinsInstance())) {
+            if (store.getContext() == getJenkinsInstance()) {
                 return store;
             }
         }
@@ -123,7 +119,7 @@ public class SystemCredentialsAction implements Action {
      */
     private StandardCredentials findCredentialById(String id) {
         List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) jenkins, null, Collections.emptyList());
+                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList());
         for (StandardCredentials c : creds) {
             if (c.getId().equals(id)) {
                 return c;
@@ -136,11 +132,11 @@ public class SystemCredentialsAction implements Action {
      * API: 以JSON格式返回系统级所有凭据
      */
     public HttpResponse doListCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         JSONArray arr = new JSONArray();
         List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) jenkins, null, Collections.emptyList());
+                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList());
 
         for (StandardCredentials c : creds) {
             JSONObject obj = new JSONObject();
@@ -172,7 +168,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doDecryptCredential(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         if (id == null || id.isEmpty()) {
@@ -216,7 +212,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doCreateSecretText(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         String description = req.getParameter("description");
@@ -252,7 +248,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doCreateUsernamePassword(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         String description = req.getParameter("description");
@@ -293,7 +289,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doCreateSSHKey(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         String description = req.getParameter("description");
@@ -339,7 +335,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doUpdateSecretText(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         String description = req.getParameter("description");
@@ -383,7 +379,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doUpdateUsernamePassword(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         String description = req.getParameter("description");
@@ -430,7 +426,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doUpdateSSHKey(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         String description = req.getParameter("description");
@@ -482,7 +478,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doDeleteCredential(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         if (id == null || id.isEmpty()) {
@@ -518,7 +514,7 @@ public class SystemCredentialsAction implements Action {
      */
     @RequirePOST
     public HttpResponse doGenerateKeyPair(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
         // 复用EncryptedManagementAction的密钥生成逻辑
         return EncryptedManagementAction.doGenerateKeyPairStatic(req.getParameter("passphrase"), "system");
     }
@@ -527,7 +523,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doAuditLog(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         int limit = 100;
         String limitParam = req.getParameter("limit");
@@ -553,7 +549,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doConfigureAuditLog(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String daysParam = req.getParameter("maxRetentionDays");
         if (daysParam != null && !daysParam.isEmpty()) {
@@ -576,7 +572,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doExportCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String password = req.getParameter("password");
         if (password == null || password.isEmpty()) {
@@ -587,7 +583,7 @@ public class SystemCredentialsAction implements Action {
         }
 
         try {
-            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) jenkins, password);
+            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) getJenkinsInstance(), password);
             AuditLogger.logExport("system", "exported system credentials");
 
             JSONObject result = new JSONObject();
@@ -604,7 +600,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doExportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String password = req.getParameter("password");
         if (password == null || password.isEmpty()) {
@@ -615,7 +611,7 @@ public class SystemCredentialsAction implements Action {
         }
 
         try {
-            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) jenkins, password);
+            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) getJenkinsInstance(), password);
             AuditLogger.logExport("system", "exported system credentials as file");
 
             String filename = "credentials-backup-system-"
@@ -638,7 +634,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doImportCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String password = req.getParameter("password");
         String encryptedData = req.getParameter("data");
@@ -654,7 +650,7 @@ public class SystemCredentialsAction implements Action {
         boolean overwrite = "true".equals(overwriteParam);
 
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials((ItemGroup<?>) jenkins, encryptedData, password, overwrite);
+            JSONObject importResult = CredentialBackupService.importCredentials((ItemGroup<?>) getJenkinsInstance(), encryptedData, password, overwrite);
             AuditLogger.logImport("system", "imported: " + importResult.toString());
 
             JSONObject result = new JSONObject();
@@ -672,7 +668,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doImportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         String password = req.getParameter("password");
         String encryptedData = req.getParameter("data");
@@ -688,7 +684,7 @@ public class SystemCredentialsAction implements Action {
         boolean overwrite = "true".equals(overwriteParam);
 
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials((ItemGroup<?>) jenkins, encryptedData.trim(), password, overwrite);
+            JSONObject importResult = CredentialBackupService.importCredentials((ItemGroup<?>) getJenkinsInstance(), encryptedData.trim(), password, overwrite);
             AuditLogger.logImport("system", "imported from file: " + importResult.toString());
 
             JSONObject result = new JSONObject();
@@ -708,7 +704,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doStorageStatus(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         ExternalStorageManager manager = ExternalStorageManager.getInstance();
         JSONObject status = manager.getStatus();
@@ -718,7 +714,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doConfigureStorage(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         ExternalStorageManager manager = ExternalStorageManager.getInstance();
 
@@ -756,7 +752,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doTestStorageConnection(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         ExternalStorageManager manager = ExternalStorageManager.getInstance();
         boolean connected = manager.testConnection();
@@ -769,7 +765,7 @@ public class SystemCredentialsAction implements Action {
 
     @RequirePOST
     public HttpResponse doSyncToExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        jenkins.checkPermission(Jenkins.ADMINISTER);
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
         ExternalStorageManager manager = ExternalStorageManager.getInstance();
         if (!manager.isEnabled()) {
@@ -777,7 +773,7 @@ public class SystemCredentialsAction implements Action {
         }
 
         final List<StandardCredentials> creds = new ArrayList<>(CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) jenkins, null, Collections.emptyList()));
+                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList()));
         final String folderName = "system";
 
         getAsyncExecutor().submit(new Runnable() {
@@ -875,20 +871,4 @@ public class SystemCredentialsAction implements Action {
         return jsonResult(result);
     }
 
-    /**
-     * 通过 TransientActionFactory 自动为 Jenkins 根实例添加此 Action
-     */
-    @Extension
-    public static class ActionFactory extends TransientActionFactory<Jenkins> {
-        @Override
-        public Class<Jenkins> type() {
-            return Jenkins.class;
-        }
-
-        @Override
-        @Nonnull
-        public Collection<? extends Action> createFor(@Nonnull Jenkins jenkins) {
-            return Collections.singletonList(new SystemCredentialsAction(jenkins));
-        }
-    }
 }
