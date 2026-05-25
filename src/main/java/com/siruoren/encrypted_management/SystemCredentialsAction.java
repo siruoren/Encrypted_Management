@@ -700,6 +700,45 @@ public class SystemCredentialsAction implements RootAction {
         }
     }
 
+    /**
+     * API: 从外部存储导入系统级凭据
+     * 外部存储JSON格式与CredentialBackupService导出格式一致，可直接导入
+     */
+    @RequirePOST
+    public HttpResponse doImportFromExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
+
+        ExternalStorageManager manager = ExternalStorageManager.getInstance();
+        if (!manager.isEnabled()) {
+            return errorResponse("External storage is not enabled");
+        }
+
+        String overwriteParam = req.getParameter("overwrite");
+        boolean overwrite = "true".equals(overwriteParam);
+
+        try {
+            ExternalStorage storage = manager.getStorage();
+            JSONObject externalData = storage.loadAllCredentials("system");
+
+            if (externalData == null) {
+                return errorResponse("No credentials found in external storage for system level");
+            }
+
+            JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
+                    getJenkinsInstance(), externalData, overwrite);
+            AuditLogger.logImport("system", "imported from external: " + importResult.toString());
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("importResult", importResult);
+            result.put("message", "System credentials imported from external storage successfully");
+            return jsonResult(result);
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to import system credentials from external storage", e);
+            return errorResponse("Failed to import credentials from external storage: " + e.getMessage());
+        }
+    }
+
     // ==================== 外部存储 API ====================
 
     @RequirePOST
@@ -724,6 +763,13 @@ public class SystemCredentialsAction implements RootAction {
         String encryptionPassword = req.getParameter("encryptionPassword");
 
         boolean enabled = "true".equalsIgnoreCase(enabledStr);
+
+        // 启用外部存储时必须设置加密密码
+        if (enabled && (encryptionPassword == null || encryptionPassword.isEmpty())
+                && (manager.getEncryptionPassword() == null || manager.getEncryptionPassword().isEmpty())) {
+            return errorResponse("Encryption password is required when enabling external storage");
+        }
+
         manager.setEnabled(enabled);
 
         if (syncModeStr != null) {
@@ -781,12 +827,15 @@ public class SystemCredentialsAction implements RootAction {
             public void run() {
                 try {
                     ExternalStorage storage = manager.getStorage();
-                    int synced = 0;
+
+                    // 构建所有凭据的JSON数据
+                    net.sf.json.JSONArray credentialsArray = new net.sf.json.JSONArray();
                     for (StandardCredentials c : creds) {
                         try {
                             JSONObject credData = new JSONObject();
                             credData.put("id", c.getId());
                             credData.put("description", c.getDescription());
+                            credData.put("scope", c.getScope().name());
                             credData.put("type", getCredentialsTypeKey(c));
 
                             if (c instanceof UsernamePasswordCredentials) {
@@ -802,15 +851,25 @@ public class SystemCredentialsAction implements RootAction {
                                 credData.put("privateKey", ssh.getPrivateKey());
                             }
 
-                            storage.saveCredential(folderName, c.getId(), credData);
-                            synced++;
+                            credentialsArray.add(credData);
                         } catch (Exception e) {
-                            LOGGER.log(Level.WARNING, "Failed to sync credential: " + c.getId(), e);
+                            LOGGER.log(Level.WARNING, "Failed to serialize credential: " + c.getId(), e);
                         }
                     }
 
-                    AuditLogger.log(folderName, "SYNC_TO_EXTERNAL", "*", "*", "synced " + synced + " credentials");
-                    LOGGER.info("Async sync completed: " + synced + " system credentials synced");
+                    // 构建完整的导出JSON，与CredentialBackupService格式一致
+                    JSONObject allData = new JSONObject();
+                    allData.put("version", "1.0");
+                    allData.put("folder", folderName);
+                    allData.put("exportTime", java.time.LocalDateTime.now().toString());
+                    allData.put("count", credentialsArray.size());
+                    allData.put("credentials", credentialsArray);
+
+                    // 保存为jenkins_root.json
+                    storage.saveAllCredentials(folderName, allData);
+
+                    AuditLogger.log(folderName, "SYNC_TO_EXTERNAL", "*", "*", "synced " + credentialsArray.size() + " credentials");
+                    LOGGER.info("Async sync completed: " + credentialsArray.size() + " system credentials synced");
                 } catch (Exception e) {
                     LOGGER.log(Level.SEVERE, "Failed to sync system credentials to external storage", e);
                 }

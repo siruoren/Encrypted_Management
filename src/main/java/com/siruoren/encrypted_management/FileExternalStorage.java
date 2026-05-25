@@ -23,10 +23,11 @@ import java.util.Base64;
 /**
  * 基于文件的外部存储实现
  * 凭据存储在自定义目录下，与Jenkins Job配置完全解耦
- * 支持AES-256-GCM加密存储，每个凭据一个加密JSON文件
+ * 每个目录任务的所有凭据保存为一个JSON文件，系统级凭据使用jenkins_root.json
+ * 支持AES-256-GCM加密存储
  *
  * 并发优化：
- * - 使用per-credential细粒度锁，避免全局锁阻塞
+ * - 使用per-folder细粒度锁，避免全局锁阻塞
  * - encryptionPassword使用volatile保证可见性
  * - 写入使用临时文件+原子重命名，防止写入中断导致数据损坏
  */
@@ -40,8 +41,8 @@ public class FileExternalStorage implements ExternalStorage {
     private volatile File storageDir;
     private volatile String encryptionPassword;
 
-    // per-credential细粒度锁，避免全局锁阻塞并发操作
-    private final ConcurrentHashMap<String, ReentrantLock> credentialLocks = new ConcurrentHashMap<>();
+    // per-folder细粒度锁，避免全局锁阻塞并发操作
+    private final ConcurrentHashMap<String, ReentrantLock> folderLocks = new ConcurrentHashMap<>();
 
     public FileExternalStorage() {
         this.storageDir = new File(Jenkins.get().getRootDir(), "encrypted-management-storage");
@@ -77,11 +78,22 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     /**
-     * 获取凭据级别的锁
+     * 获取文件夹级别的锁
      */
-    private ReentrantLock getCredentialLock(String folderName, String credentialId) {
-        String key = folderName + "/" + credentialId;
-        return credentialLocks.computeIfAbsent(key, k -> new ReentrantLock());
+    private ReentrantLock getFolderLock(String folderName) {
+        return folderLocks.computeIfAbsent(folderName, k -> new ReentrantLock());
+    }
+
+    /**
+     * 根据文件夹名生成JSON文件名
+     * 系统级凭据使用jenkins_root.json
+     * 目录任务使用目录全名（/替换为_）.json
+     */
+    private String getFileName(String folderName) {
+        if (folderName == null || folderName.isEmpty() || "system".equals(folderName)) {
+            return "jenkins_root.json";
+        }
+        return sanitizePath(folderName) + ".json";
     }
 
     @Override
@@ -95,31 +107,30 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     @Override
-    public void saveCredential(String folderName, String credentialId, JSONObject credentialData) throws IOException {
-        ReentrantLock lock = getCredentialLock(folderName, credentialId);
+    public void saveAllCredentials(String folderName, JSONObject allCredentialsData) throws IOException {
+        ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
             File currentStorageDir = storageDir; // 快照读取
-            File folderDir = new File(currentStorageDir, sanitizePath(folderName));
-            if (!folderDir.exists()) {
-                folderDir.mkdirs();
+            if (!currentStorageDir.exists()) {
+                currentStorageDir.mkdirs();
             }
 
             String dataToWrite;
             String currentPassword = encryptionPassword; // 快照读取
-            if (currentPassword != null && !currentPassword.isEmpty()) {
-                try {
-                    dataToWrite = encrypt(credentialData.toString(), currentPassword);
-                } catch (Exception e) {
-                    throw new IOException("Failed to encrypt credential data", e);
-                }
-            } else {
-                dataToWrite = credentialData.toString();
+            if (currentPassword == null || currentPassword.isEmpty()) {
+                throw new IOException("Encryption password is required for external storage");
+            }
+            try {
+                dataToWrite = encrypt(allCredentialsData.toString(), currentPassword);
+            } catch (Exception e) {
+                throw new IOException("Failed to encrypt credential data", e);
             }
 
             // 写入临时文件后原子重命名，防止写入中断导致数据损坏
-            File credFile = new File(folderDir, sanitizePath(credentialId) + ".json");
-            File tempFile = new File(folderDir, sanitizePath(credentialId) + ".json.tmp");
+            String fileName = getFileName(folderName);
+            File credFile = new File(currentStorageDir, fileName);
+            File tempFile = new File(currentStorageDir, fileName + ".tmp");
             try (Writer writer = new OutputStreamWriter(new FileOutputStream(tempFile), StandardCharsets.UTF_8)) {
                 writer.write(dataToWrite);
             }
@@ -133,7 +144,7 @@ public class FileExternalStorage implements ExternalStorage {
                 tempFile.delete();
             }
 
-            LOGGER.info("Saved credential to external storage: " + folderName + "/" + credentialId
+            LOGGER.info("Saved credentials to external storage: " + fileName
                     + (currentPassword != null ? " (encrypted)" : ""));
         } finally {
             lock.unlock();
@@ -141,12 +152,13 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     @Override
-    public JSONObject loadCredential(String folderName, String credentialId) throws IOException {
-        ReentrantLock lock = getCredentialLock(folderName, credentialId);
+    public JSONObject loadAllCredentials(String folderName) throws IOException {
+        ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
             File currentStorageDir = storageDir; // 快照读取
-            File credFile = new File(currentStorageDir, sanitizePath(folderName) + "/" + sanitizePath(credentialId) + ".json");
+            String fileName = getFileName(folderName);
+            File credFile = new File(currentStorageDir, fileName);
             if (!credFile.exists()) {
                 return null;
             }
@@ -154,12 +166,13 @@ public class FileExternalStorage implements ExternalStorage {
             String content = new String(Files.readAllBytes(credFile.toPath()), StandardCharsets.UTF_8);
 
             String currentPassword = encryptionPassword; // 快照读取
-            if (currentPassword != null && !currentPassword.isEmpty()) {
-                try {
-                    content = decrypt(content, currentPassword);
-                } catch (Exception e) {
-                    throw new IOException("Failed to decrypt credential data", e);
-                }
+            if (currentPassword == null || currentPassword.isEmpty()) {
+                throw new IOException("Encryption password is required for external storage");
+            }
+            try {
+                content = decrypt(content, currentPassword);
+            } catch (Exception e) {
+                throw new IOException("Failed to decrypt credential data", e);
             }
 
             return JSONObject.fromObject(content);
@@ -169,43 +182,44 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     @Override
-    public void deleteCredential(String folderName, String credentialId) throws IOException {
-        ReentrantLock lock = getCredentialLock(folderName, credentialId);
+    public void deleteAllCredentials(String folderName) throws IOException {
+        ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
             File currentStorageDir = storageDir; // 快照读取
-            File credFile = new File(currentStorageDir, sanitizePath(folderName) + "/" + sanitizePath(credentialId) + ".json");
+            String fileName = getFileName(folderName);
+            File credFile = new File(currentStorageDir, fileName);
             if (credFile.exists()) {
                 if (!credFile.delete()) {
                     throw new IOException("Failed to delete credential file: " + credFile.getAbsolutePath());
                 }
             }
             // 清理锁映射，防止内存泄漏
-            credentialLocks.remove(folderName + "/" + credentialId);
+            folderLocks.remove(folderName);
         } finally {
             lock.unlock();
         }
     }
 
     @Override
-    public List<String> listCredentials(String folderName) throws IOException {
+    public List<String> listFolders() throws IOException {
         File currentStorageDir = storageDir; // 快照读取
-        File folderDir = new File(currentStorageDir, sanitizePath(folderName));
-        if (!folderDir.exists() || !folderDir.isDirectory()) {
+        if (!currentStorageDir.exists() || !currentStorageDir.isDirectory()) {
             return Collections.emptyList();
         }
 
-        File[] files = folderDir.listFiles((dir, name) -> name.endsWith(".json"));
+        File[] files = currentStorageDir.listFiles((dir, name) -> name.endsWith(".json"));
         if (files == null) {
             return Collections.emptyList();
         }
 
-        List<String> ids = new ArrayList<>();
+        List<String> folders = new ArrayList<>();
         for (File f : files) {
             String name = f.getName();
-            ids.add(name.substring(0, name.length() - 5));
+            String folderName = name.substring(0, name.length() - 5); // 去掉.json
+            folders.add(folderName);
         }
-        return ids;
+        return folders;
     }
 
     @Override

@@ -30,7 +30,9 @@ All notable changes to the Encrypted Management plugin will be documented in thi
   - 定义 `ExternalStorage` 接口，实现 `FileExternalStorage` 文件系统后端
   - 支持 Manual / Auto Sync / External Only 三种同步模式
   - 支持自定义存储路径
-  - 支持 AES-256-GCM 加密存储，页面设置加密密码
+  - 每个目录任务的所有凭据保存为一个 JSON 文件，系统级凭据使用 `jenkins_root.json`
+  - 外部存储文件强制加密存储，加密密码为必填项
+  - 支持从外部存储 JSON 文件直接导入凭据到 Jenkins
   - 凭据写入使用临时文件+原子重命名，防止数据损坏
 
 - **REST API**

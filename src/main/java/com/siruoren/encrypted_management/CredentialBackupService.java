@@ -110,9 +110,21 @@ public class CredentialBackupService {
         // 解密
         String plainJson = decrypt(encryptedData, encryptionPassword);
         JSONObject importObj = JSONObject.fromObject(plainJson);
+        return importCredentialsFromJson(itemGroup, importObj, overwrite);
+    }
 
+    /**
+     * 从已解密的JSON对象导入凭据到指定文件夹
+     * 适用于外部存储导入（外部存储的JSON已由FileExternalStorage解密）
+     * @param itemGroup 目标ItemGroup
+     * @param importObj 已解密的JSON对象（包含credentials数组）
+     * @param overwrite 是否覆盖已存在的凭据
+     * @return 导入结果
+     */
+    public static JSONObject importCredentialsFromJson(ItemGroup<?> itemGroup, JSONObject importObj,
+                                                       boolean overwrite) throws Exception {
         JSONArray credentialsArray = importObj.getJSONArray("credentials");
-        String sourceFolder = importObj.getString("folder");
+        String sourceFolder = importObj.optString("folder", "unknown");
 
         CredentialsStore store = null;
         for (CredentialsStore s : CredentialsProvider.lookupStores(itemGroup)) {

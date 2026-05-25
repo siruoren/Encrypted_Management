@@ -3,6 +3,7 @@ package com.siruoren.encrypted_management;
 import net.sf.json.JSONObject;
 
 import java.io.IOException;
+import java.util.List;
 
 /**
  * 外部存储后端接口
@@ -21,34 +22,30 @@ public interface ExternalStorage {
     boolean testConnection() throws IOException;
 
     /**
-     * 保存凭据到外部存储
-     * @param folderName 文件夹名
-     * @param credentialId 凭据ID
-     * @param credentialData 凭据数据（JSON格式）
+     * 保存指定文件夹的所有凭据为一个JSON文件
+     * @param folderName 文件夹名（系统级使用"jenkins_root"）
+     * @param allCredentialsData 所有凭据数据（JSON格式，包含credentials数组）
      */
-    void saveCredential(String folderName, String credentialId, JSONObject credentialData) throws IOException;
+    void saveAllCredentials(String folderName, JSONObject allCredentialsData) throws IOException;
 
     /**
-     * 从外部存储读取凭据
-     * @param folderName 文件夹名
-     * @param credentialId 凭据ID
-     * @return 凭据数据（JSON格式），不存在返回null
+     * 从外部存储加载指定文件夹的所有凭据
+     * @param folderName 文件夹名（系统级使用"jenkins_root"）
+     * @return 所有凭据数据（JSON格式），不存在返回null
      */
-    JSONObject loadCredential(String folderName, String credentialId) throws IOException;
+    JSONObject loadAllCredentials(String folderName) throws IOException;
 
     /**
-     * 从外部存储删除凭据
+     * 从外部存储删除指定文件夹的凭据文件
      * @param folderName 文件夹名
-     * @param credentialId 凭据ID
      */
-    void deleteCredential(String folderName, String credentialId) throws IOException;
+    void deleteAllCredentials(String folderName) throws IOException;
 
     /**
-     * 列出指定文件夹的所有凭据ID
-     * @param folderName 文件夹名
-     * @return 凭据ID列表
+     * 列出外部存储中所有文件夹名
+     * @return 文件夹名列表
      */
-    java.util.List<String> listCredentials(String folderName) throws IOException;
+    List<String> listFolders() throws IOException;
 
     /**
      * 获取存储后端配置信息（不包含敏感信息）
