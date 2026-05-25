@@ -47,13 +47,17 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 
 ### v1.0.0
 
+- **Jenkins 根目录系统级凭据管理**：管理员在 Jenkins 首页左侧菜单可见「系统凭证管理」，支持增删改查系统级凭据，仅 ADMINISTER 权限可见
+- **外部存储优化**：每个目录任务的所有凭据保存为一个 JSON 文件，系统级凭据使用 `jenkins_root.json`；外部存储文件强制加密存储；支持从外部存储 JSON 文件直接导入凭据到 Jenkins
 - **独立审计日志系统**：脱离 Jenkins 审计，独立文件存储（`JENKINS_HOME/encrypted-management-audit/`），按日期轮转，单文件 50MB 上限，保留天数可页面配置
 - **凭据加密备份/导入**：AES-256-GCM 加密，PBKDF2 密钥派生，支持跨实例恢复，支持文件下载导出和文件上传导入，解决 Master 单点故障问题
 - **外部存储解耦**：定义 `ExternalStorage` 接口，实现 `FileExternalStorage` 文件系统后端，支持 Manual / Auto Sync / External Only 三种同步模式，支持自定义存储路径和 AES-256-GCM 加密存储
 - **REST API**：审计日志查询/配置、凭据导出/导入（文本和文件）、外部存储状态/配置/同步/连接测试等 API
 - **Swagger API 文档**：独立 Swagger 风格 API 文档页面，按模块分组展示（凭证管理、审计日志、备份恢复、外部存储），支持 Try it 在线测试、Curl 命令生成、Schema 模型展示、文件上传/下载测试
 - **弹窗交互重构**：所有操作改为弹窗形式（创建/更新凭据、审计日志、导出/导入、外部存储配置），错误信息统一弹窗提示
-- **并发优化**：审计日志单线程 Executor 异步写入、外部存储 ReadWriteLock 保护配置原子性、凭据级细粒度 ReentrantLock、同步操作异步非阻塞、线程池守护线程防内存泄露
+- **并发优化**：审计日志单线程 Executor 异步写入、外部存储 ReadWriteLock 保护配置原子性、目录级细粒度 ReentrantLock、同步操作异步非阻塞、线程池守护线程防内存泄露
+- **单元测试**：25 个测试用例覆盖加密解密功能和外部存储功能
+- **依赖优化**：移除未使用的依赖（structs、jsch），精简项目依赖结构
 - **凭据管理核心功能**（创建、解密、更新、删除）
 - **凭据类型支持**：支持 Secret Text、Username with Password、SSH Username with Private Key
 - **SSH 密钥对生成**（支持 passphrase 加密）
