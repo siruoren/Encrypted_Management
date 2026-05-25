@@ -1,14 +1,14 @@
 <?jelly escape-by-default='false'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
-    <l:layout title="${%API Documentation} - ${it.folder.displayName}">
-        <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
+    <l:layout title="${%API Documentation} - System">
+        <st:include page="sidepanel.jelly" it="${it.jenkins}" optional="true"/>
         <l:main_panel>
             <div id="swagger-ui">
                 <!-- Top Bar -->
                 <div class="swagger-topbar">
                     <div class="swagger-topbar-wrapper">
-                        <a class="swagger-topbar-logo" href="api-doc">Encrypted Management API</a>
-                        <a href="${rootURL}/${it.folder.url}Encrypted_Management/" class="swagger-back-btn">${%Back to Credentials Management}</a>
+                        <a class="swagger-topbar-logo" href="api-doc">System Credentials Management API</a>
+                        <a href="${rootURL}/${it.jenkins.url}System_Credentials_Management/" class="swagger-back-btn">${%Back to Credentials Management}</a>
                     </div>
                 </div>
 

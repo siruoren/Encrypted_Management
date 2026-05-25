@@ -61,3 +61,10 @@ All notable changes to the Encrypted Management plugin will be documented in thi
   - 文件下载支持（表单提交触发浏览器下载）
   - 主页面右上角 API 文档跳转按钮
   - API 文档页面中英文国际化支持
+
+- **Jenkins 根目录系统级凭据管理**
+  - 新增 SystemCredentialsAction，管理员在 Jenkins 首页左侧菜单可见「系统凭证管理」
+  - 与文件夹级凭据管理功能完全一致：增删改查、SSH密钥生成、审计日志、备份导入导出、外部存储
+  - 仅管理员（ADMINISTER 权限）可见和操作
+  - 独立的 Swagger API 文档页面
+  - 中英文国际化支持

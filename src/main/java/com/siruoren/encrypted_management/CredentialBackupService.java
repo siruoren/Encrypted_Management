@@ -1,6 +1,5 @@
 package com.siruoren.encrypted_management;
 
-import com.cloudbees.hudson.plugins.folder.Folder;
 import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
@@ -9,6 +8,7 @@ import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.common.UsernamePasswordCredentials;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
+import hudson.model.ItemGroup;
 import hudson.util.Secret;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
@@ -49,11 +49,11 @@ public class CredentialBackupService {
      * @param encryptionPassword 加密密码
      * @return 加密后的Base64字符串
      */
-    public static String exportCredentials(Folder folder, String encryptionPassword) throws Exception {
+    public static String exportCredentials(ItemGroup<?> itemGroup, String encryptionPassword) throws Exception {
         // 收集所有凭据
         JSONArray credentialsArray = new JSONArray();
         List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (hudson.model.ItemGroup<?>) folder, null, java.util.Collections.emptyList());
+                StandardCredentials.class, itemGroup, null, java.util.Collections.emptyList());
 
         for (StandardCredentials c : creds) {
             JSONObject credObj = new JSONObject();
@@ -84,9 +84,10 @@ public class CredentialBackupService {
         }
 
         // 构建导出JSON
+        String fullName = itemGroup instanceof hudson.model.Item ? ((hudson.model.Item) itemGroup).getFullName() : "";
         JSONObject exportObj = new JSONObject();
         exportObj.put("version", BACKUP_VERSION);
-        exportObj.put("folder", folder.getFullName());
+        exportObj.put("folder", fullName);
         exportObj.put("exportTime", java.time.LocalDateTime.now().toString());
         exportObj.put("count", credentialsArray.size());
         exportObj.put("credentials", credentialsArray);
@@ -104,7 +105,7 @@ public class CredentialBackupService {
      * @param overwrite 是否覆盖已存在的凭据
      * @return 导入结果
      */
-    public static JSONObject importCredentials(Folder folder, String encryptedData,
+    public static JSONObject importCredentials(ItemGroup<?> itemGroup, String encryptedData,
                                                 String encryptionPassword, boolean overwrite) throws Exception {
         // 解密
         String plainJson = decrypt(encryptedData, encryptionPassword);
@@ -114,14 +115,15 @@ public class CredentialBackupService {
         String sourceFolder = importObj.getString("folder");
 
         CredentialsStore store = null;
-        for (CredentialsStore s : CredentialsProvider.lookupStores(folder)) {
-            if (s.getContext() == folder) {
+        for (CredentialsStore s : CredentialsProvider.lookupStores(itemGroup)) {
+            if (s.getContext() == itemGroup) {
                 store = s;
                 break;
             }
         }
         if (store == null) {
-            throw new IOException("No credentials store found for folder: " + folder.getFullName());
+            String name = itemGroup instanceof hudson.model.Item ? ((hudson.model.Item) itemGroup).getFullName() : "root";
+            throw new IOException("No credentials store found for: " + name);
         }
 
         int imported = 0;
@@ -137,7 +139,7 @@ public class CredentialBackupService {
                 String description = credObj.optString("description", "");
 
                 // 检查是否已存在
-                StandardCredentials existing = findCredentialById(folder, id);
+                StandardCredentials existing = findCredentialById(itemGroup, id);
 
                 if (existing != null && !overwrite) {
                     skipped++;
@@ -207,10 +209,10 @@ public class CredentialBackupService {
     /**
      * 根据ID查找凭据
      */
-    private static StandardCredentials findCredentialById(Folder folder, String id) {
+    private static StandardCredentials findCredentialById(ItemGroup<?> itemGroup, String id) {
         if (id == null || id.isEmpty()) return null;
         List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (hudson.model.ItemGroup<?>) folder, null, java.util.Collections.emptyList());
+                StandardCredentials.class, itemGroup, null, java.util.Collections.emptyList());
         for (StandardCredentials c : creds) {
             if (c.getId().equals(id)) {
                 return c;
