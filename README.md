@@ -39,7 +39,8 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 
 ## 权限要求
 
-- 需要 Folder 的 Configure 权限才能访问凭据管理页面
+- 文件夹级凭据管理：需要 Folder 的 Configure 权限
+- 系统级凭据管理（Jenkins 根目录）：需要 Jenkins ADMINISTER 权限（仅管理员可见左侧菜单）
 - 所有操作（创建、解密、更新、删除）均需通过权限校验
 
 ## 版本历史
