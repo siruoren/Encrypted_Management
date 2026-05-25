@@ -1,0 +1,20 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form" xmlns:st="jelly:stapler">
+    <f:section title="${%Credentials}">
+        <f:repeatable var="variable" items="${instance.variables}" add="${%Add Credential}">
+            <table width="100%">
+                <f:entry title="${%Name}" field="name">
+                    <f:textbox value="${variable.name}"/>
+                </f:entry>
+                <f:entry title="${%Value}" field="value">
+                    <f:password value="${variable.encryptedValue}"/>
+                </f:entry>
+                <f:entry>
+                    <div align="right">
+                        <f:repeatableDeleteButton/>
+                    </div>
+                </f:entry>
+            </table>
+        </f:repeatable>
+    </f:section>
+</j:jelly>

@@ -1,0 +1,6 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core">
+    <div>
+        Encrypted Management Plugin - Manage encrypted variables in Jenkins folders.
+    </div>
+</j:jelly>

@@ -1,0 +1,1054 @@
+<?jelly escape-by-default='false'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
+    <l:layout title="${%API Documentation} - ${it.folder.displayName}">
+        <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
+        <l:main_panel>
+            <div id="swagger-ui">
+                <!-- Top Bar -->
+                <div class="swagger-topbar">
+                    <div class="swagger-topbar-wrapper">
+                        <a class="swagger-topbar-logo" href="api-doc">Encrypted Management API</a>
+                        <a href="${rootURL}/${it.folder.url}Encrypted_Management/" class="swagger-back-btn">${%Back to Credentials Management}</a>
+                    </div>
+                </div>
+
+                <!-- Info Section -->
+                <div class="swagger-info">
+                    <h1 class="swagger-title">${%Encrypted Management REST API}</h1>
+                    <p class="swagger-description">${%API description}</p>
+                    <div class="swagger-meta">
+                        <span class="swagger-version">${%Version}: <strong>1.0.0</strong></span>
+                        <span class="swagger-baseurl">${%Base URL}: <code id="api-base-url"></code></span>
+                        <span class="swagger-auth">${%Authentication}: <strong> Jenkins Crumb + Session</strong></span>
+                    </div>
+                </div>
+
+                <style>
+                    #swagger-ui { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #3b4151; }
+                    .swagger-topbar { background: #1b1b1b; padding: 8px 0; }
+                    .swagger-topbar-wrapper { max-width: 1200px; margin: 0 auto; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; }
+                    .swagger-topbar-logo { color: #fff; font-size: 1.3em; font-weight: bold; text-decoration: none; letter-spacing: 1px; }
+                    .swagger-back-btn { color: #89bf04; text-decoration: none; font-size: 0.9em; border: 1px solid #89bf04; padding: 4px 12px; border-radius: 3px; }
+                    .swagger-back-btn:hover { background: #89bf04; color: #1b1b1b; }
+                    .swagger-info { max-width: 1200px; margin: 0 auto; padding: 20px 20px 10px; }
+                    .swagger-title { font-size: 2em; margin: 0 0 5px; color: #3b4151; }
+                    .swagger-description { color: #666; font-size: 1em; margin: 0 0 10px; }
+                    .swagger-meta { display: flex; gap: 20px; flex-wrap: wrap; font-size: 0.85em; color: #888; }
+                    .swagger-meta code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+                    .swagger-tag { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
+                    .swagger-tag-header { display: flex; align-items: center; padding: 10px 0; cursor: pointer; border-bottom: 1px solid #eee; margin-top: 20px; }
+                    .swagger-tag-header:hover { background: #fafafa; }
+                    .swagger-tag-icon { width: 32px; height: 32px; background: #49cc90; border-radius: 3px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; margin-right: 10px; font-size: 1.1em; }
+                    .swagger-tag-name { font-size: 1.4em; color: #3b4151; margin: 0; }
+                    .swagger-tag-desc { color: #888; font-size: 0.85em; margin-left: 10px; }
+                    .swagger-endpoint { border: 1px solid #ddd; margin: 10px 0; border-radius: 4px; overflow: hidden; }
+                    .swagger-endpoint-header { display: flex; align-items: center; padding: 8px 12px; cursor: pointer; background: #f8f8f8; }
+                    .swagger-endpoint-header:hover { background: #f0f0f0; }
+                    .swagger-method { font-weight: bold; padding: 4px 8px; border-radius: 3px; color: #fff; font-size: 0.8em; min-width: 70px; text-align: center; margin-right: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+                    .method-get { background: #61affe; }
+                    .method-post { background: #49cc90; }
+                    .swagger-path { font-family: monospace; font-size: 0.95em; color: #333; font-weight: 600; }
+                    .swagger-summary { margin-left: auto; color: #888; font-size: 0.85em; }
+                    .swagger-endpoint-body { display: none; border-top: 1px solid #ddd; padding: 15px 20px; background: #fff; }
+                    .swagger-endpoint-body.open { display: block; }
+                    .swagger-endpoint-desc { color: #555; font-size: 0.9em; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0; }
+                    .swagger-params-title { font-size: 0.95em; font-weight: 700; margin: 10px 0 5px; color: #3b4151; }
+                    .swagger-params { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+                    .swagger-params th { background: #f7f7f7; padding: 8px 10px; text-align: left; font-size: 0.85em; color: #666; border: 1px solid #ddd; }
+                    .swagger-params td { padding: 8px 10px; border: 1px solid #ddd; font-size: 0.85em; vertical-align: top; }
+                    .swagger-params .param-name { font-family: monospace; font-weight: 600; color: #3b4151; }
+                    .swagger-params .param-required { color: #e74c3c; font-weight: bold; font-size: 0.75em; }
+                    .swagger-params .param-optional { color: #999; font-size: 0.75em; }
+                    .swagger-response-title { font-size: 0.95em; font-weight: 700; margin: 10px 0 5px; color: #3b4151; }
+                    .swagger-response-code { font-size: 0.85em; color: #49cc90; font-weight: 600; margin-bottom: 5px; }
+                    .swagger-response-pre { background: #f4f4f4; border: 1px solid #ddd; border-radius: 4px; padding: 10px; font-size: 0.82em; overflow-x: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+                    .swagger-try-section { margin-top: 15px; border-top: 2px solid #49cc90; padding-top: 12px; }
+                    .swagger-try-title { font-size: 0.95em; font-weight: 700; color: #3b4151; margin-bottom: 8px; }
+                    .swagger-try-inputs { margin-bottom: 10px; }
+                    .swagger-try-field { display: flex; align-items: flex-start; margin-bottom: 6px; }
+                    .swagger-try-field label { width: 160px; font-family: monospace; font-size: 0.85em; font-weight: 600; color: #3b4151; flex-shrink: 0; padding-top: 6px; }
+                    .swagger-try-field label .field-required { color: #e74c3c; margin-left: 2px; }
+                    .swagger-try-field input[type="text"], .swagger-try-field textarea { flex: 1; padding: 6px 10px; border: 1px solid #ccc; border-radius: 3px; font-size: 0.85em; font-family: monospace; }
+                    .swagger-try-field textarea { min-height: 60px; resize: vertical; }
+                    .swagger-try-field input:focus, .swagger-try-field textarea:focus { border-color: #49cc90; outline: none; box-shadow: 0 0 0 2px rgba(73,204,144,0.2); }
+                    .swagger-try-field input[type="file"] { flex: 1; font-size: 0.85em; }
+                    .swagger-try-btn { margin-top: 10px; }
+                    .swagger-try-btn button { background: #49cc90; color: #fff; border: none; padding: 8px 20px; border-radius: 3px; cursor: pointer; font-size: 0.85em; font-weight: 600; }
+                    .swagger-try-btn button:hover { background: #3daf7c; }
+                    .swagger-try-result { margin-top: 10px; display: none; }
+                    .swagger-try-result-label { font-size: 0.85em; font-weight: 600; color: #3b4151; margin-bottom: 4px; }
+                    .swagger-try-result pre { background: #1b1b1b; color: #89bf04; border-radius: 4px; padding: 10px; font-size: 0.82em; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+                    .swagger-try-curl { background: #2d2d2d; color: #a9b7c6; border-radius: 4px; padding: 10px; font-size: 0.82em; margin-top: 8px; white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
+                    .swagger-try-curl .curl-keyword { color: #cc7832; }
+                    .swagger-try-curl .curl-string { color: #6a8759; }
+                    .swagger-try-curl .curl-flag { color: #ffc66d; }
+                    .swagger-models { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
+                    .swagger-models h2 { font-size: 1.4em; color: #3b4151; border-bottom: 2px solid #49cc90; padding-bottom: 5px; }
+                    .swagger-model { border: 1px solid #ddd; border-radius: 4px; margin: 10px 0; overflow: hidden; }
+                    .swagger-model-header { background: #f7f7f7; padding: 8px 12px; cursor: pointer; font-weight: 600; font-size: 0.95em; }
+                    .swagger-model-header:hover { background: #f0f0f0; }
+                    .swagger-model-body { display: none; padding: 10px 15px; border-top: 1px solid #ddd; }
+                    .swagger-model-body.open { display: block; }
+                    .swagger-model-body table { width: 100%; border-collapse: collapse; }
+                    .swagger-model-body th { background: #eee; padding: 6px 10px; text-align: left; font-size: 0.82em; color: #666; border: 1px solid #ddd; }
+                    .swagger-model-body td { padding: 6px 10px; border: 1px solid #ddd; font-size: 0.82em; }
+                </style>
+
+                <st:once>
+                    <script type="text/javascript">
+                    //<![CDATA[
+                        var baseUrl = document.location.href.replace(/api-doc\/?$/, '');
+
+                        function gv(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+
+                        function toggleTag(header) {
+                            var body = header.nextElementSibling;
+                            if (body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
+                        }
+
+                        function toggleEndpoint(header) {
+                            var body = header.nextElementSibling;
+                            if (body) body.classList.toggle('open');
+                        }
+
+                        function toggleModel(header) {
+                            var body = header.nextElementSibling;
+                            if (body) body.classList.toggle('open');
+                        }
+
+                        function loadFileContent(input, targetId) {
+                            var file = input.files[0];
+                            if (!file) return;
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                document.getElementById(targetId).value = e.target.result;
+                            };
+                            reader.readAsText(file);
+                        }
+
+                        function tryApi(endpoint, method, params) {
+                            var url = baseUrl + endpoint;
+                            var crumbHeaderName = document.head.getAttribute('data-crumb-header') || 'Jenkins-Crumb';
+                            var crumbValue = document.head.getAttribute('data-crumb-value') || '';
+                            var fetchOptions = { method: method, headers: {} };
+                            if (crumbValue) fetchOptions.headers[crumbHeaderName] = crumbValue;
+                            if (method === 'POST' && params) {
+                                fetchOptions.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                                var bodyParts = [];
+                                for (var key in params) {
+                                    if (params[key]) bodyParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+                                }
+                                fetchOptions.body = bodyParts.join('&');
+                            }
+
+                            var resultDiv = document.getElementById('result-' + endpoint);
+                            var curlDiv = document.getElementById('curl-' + endpoint);
+                            if (resultDiv) {
+                                resultDiv.style.display = 'block';
+                                if (curlDiv) curlDiv.innerHTML = buildCurl(endpoint, method, params);
+                                resultDiv.querySelector('pre').textContent = '${%Loading...}';
+                            }
+
+                            fetch(url, fetchOptions)
+                                .then(function(r) { return r.text(); })
+                                .then(function(text) {
+                                    if (resultDiv) {
+                                        try {
+                                            var json = JSON.parse(text);
+                                            resultDiv.querySelector('pre').textContent = JSON.stringify(json, null, 2);
+                                        } catch(e) {
+                                            resultDiv.querySelector('pre').textContent = text;
+                                        }
+                                    }
+                                })
+                                .catch(function(err) {
+                                    if (resultDiv) resultDiv.querySelector('pre').textContent = 'Error: ' + err.message;
+                                });
+                        }
+
+                        function buildCurl(endpoint, method, params) {
+                            var url = baseUrl + endpoint;
+                            var crumbHeaderName = document.head.getAttribute('data-crumb-header') || 'Jenkins-Crumb';
+                            var crumbValue = document.head.getAttribute('data-crumb-value') || '';
+                            var lines = [];
+                            lines.push('<span class="curl-keyword">curl</span> <span class="curl-flag">-X</span> <span class="curl-string">' + method + '</span> \\');
+                            lines.push('  <span class="curl-string">' + url + '</span> \\');
+                            lines.push('  <span class="curl-flag">-H</span> <span class="curl-string">"Content-Type: application/x-www-form-urlencoded"</span>');
+                            if (crumbValue) {
+                                lines.push('  <span class="curl-flag">-H</span> <span class="curl-string">"' + crumbHeaderName + ': ' + crumbValue + '"</span>');
+                            }
+                            if (method === 'POST' && params) {
+                                var bodyParts = [];
+                                for (var key in params) {
+                                    if (params[key]) bodyParts.push(encodeURIComponent(key) + '=' + encodeURIComponent(params[key]));
+                                }
+                                if (bodyParts.length > 0) {
+                                    lines.push('  <span class="curl-flag">-d</span> <span class="curl-string">"' + bodyParts.join('&') + '"</span>');
+                                }
+                            }
+                            return lines.join('\n');
+                        }
+
+                        function tryFileDownload(endpoint, params) {
+                            var form = document.createElement('form');
+                            form.method = 'POST';
+                            form.action = baseUrl + endpoint;
+
+                            var crumbHeaderName = document.head.getAttribute('data-crumb-header') || 'Jenkins-Crumb';
+                            var crumbValue = document.head.getAttribute('data-crumb-value') || '';
+                            if (crumbValue) {
+                                var crumbInput = document.createElement('input');
+                                crumbInput.type = 'hidden';
+                                crumbInput.name = crumbHeaderName;
+                                crumbInput.value = crumbValue;
+                                form.appendChild(crumbInput);
+                            }
+
+                            for (var key in params) {
+                                if (params[key]) {
+                                    var input = document.createElement('input');
+                                    input.type = 'hidden';
+                                    input.name = key;
+                                    input.value = params[key];
+                                    form.appendChild(input);
+                                }
+                            }
+
+                            document.body.appendChild(form);
+                            form.submit();
+                            document.body.removeChild(form);
+                        }
+
+                        document.addEventListener('DOMContentLoaded', function() {
+                            document.getElementById('api-base-url').textContent = baseUrl;
+                        });
+                    //]]>
+                    </script>
+                </st:once>
+
+                <!-- ==================== Credentials ==================== -->
+                <div class="swagger-tag">
+                    <div class="swagger-tag-header" onclick="toggleTag(this)">
+                        <div class="swagger-tag-icon">C</div>
+                        <h2 class="swagger-tag-name">${%Credentials}</h2>
+                        <span class="swagger-tag-desc">${%Credential management APIs}</span>
+                    </div>
+                    <div class="swagger-tag-body">
+
+                        <!-- GET listCredentials -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-get">GET</span>
+                                <span class="swagger-path">listCredentials</span>
+                                <span class="swagger-summary">${%List all credentials}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Returns all credentials in the current folder with their metadata.}</div>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{
+  "success": true,
+  "credentials": [
+    { "id": "credential-id", "description": "description", "type": "Username with password", "typeKey": "USERNAME_PASSWORD", "username": "admin" }
+  ],
+  "folder": "folder-name",
+  "count": 1
+}</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('listCredentials', 'GET')">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-listCredentials">
+                                        <div class="swagger-try-curl" id="curl-listCredentials"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST decryptCredential -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">decryptCredential</span>
+                                <span class="swagger-summary">${%Decrypt a credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Decrypt then return the secret values of a specified credential.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{
+  "success": true,
+  "id": "credential-id",
+  "type": "Username with password",
+  "typeKey": "USERNAME_PASSWORD",
+  "username": "admin",
+  "password": "secret-value"
+}</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id <span class="field-required">*</span></label><input type="text" id="param-decryptCredential-id" placeholder="e.g. my-credential-id" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('decryptCredential', 'POST', {id: gv('param-decryptCredential-id')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-decryptCredential">
+                                        <div class="swagger-try-curl" id="curl-decryptCredential"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST createSecretText -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">createSecretText</span>
+                                <span class="swagger-summary">${%Create Secret Text credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Create Secret Text credential in the folder.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Credential ID - leave blank for auto-generation}</td></tr>
+                                    <tr><td class="param-name">description</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Description}</td></tr>
+                                    <tr><td class="param-name">secret</td><td><span class="param-required">REQUIRED</span></td><td>${%Secret value}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "id": "auto-generated-id", "message": "Secret Text credential created successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id</label><input type="text" id="param-createSecretText-id" placeholder="Leave blank for auto-generation" /></div>
+                                        <div class="swagger-try-field"><label>description</label><input type="text" id="param-createSecretText-description" placeholder="Credential description" /></div>
+                                        <div class="swagger-try-field"><label>secret <span class="field-required">*</span></label><input type="text" id="param-createSecretText-secret" placeholder="Secret text value" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('createSecretText', 'POST', {id: gv('param-createSecretText-id'), description: gv('param-createSecretText-description'), secret: gv('param-createSecretText-secret')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-createSecretText">
+                                        <div class="swagger-try-curl" id="curl-createSecretText"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST createUsernamePassword -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">createUsernamePassword</span>
+                                <span class="swagger-summary">${%Create Username/Password credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Create Username with Password credential in the folder.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Credential ID}</td></tr>
+                                    <tr><td class="param-name">description</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Description}</td></tr>
+                                    <tr><td class="param-name">username</td><td><span class="param-required">REQUIRED</span></td><td>${%Username}</td></tr>
+                                    <tr><td class="param-name">password</td><td><span class="param-required">REQUIRED</span></td><td>${%Password}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "id": "auto-generated-id", "message": "Username/Password credential created successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id</label><input type="text" id="param-createUP-id" placeholder="Leave blank for auto-generation" /></div>
+                                        <div class="swagger-try-field"><label>description</label><input type="text" id="param-createUP-description" placeholder="Credential description" /></div>
+                                        <div class="swagger-try-field"><label>username <span class="field-required">*</span></label><input type="text" id="param-createUP-username" placeholder="Username" /></div>
+                                        <div class="swagger-try-field"><label>password <span class="field-required">*</span></label><input type="text" id="param-createUP-password" placeholder="Password" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('createUsernamePassword', 'POST', {id: gv('param-createUP-id'), description: gv('param-createUP-description'), username: gv('param-createUP-username'), password: gv('param-createUP-password')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-createUsernamePassword">
+                                        <div class="swagger-try-curl" id="curl-createUsernamePassword"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST createSSHKey -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">createSSHKey</span>
+                                <span class="swagger-summary">${%Create SSH Key credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Create SSH Username with Private Key credential in the folder.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Credential ID}</td></tr>
+                                    <tr><td class="param-name">description</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Description}</td></tr>
+                                    <tr><td class="param-name">username</td><td><span class="param-required">REQUIRED</span></td><td>${%Username}</td></tr>
+                                    <tr><td class="param-name">passphrase</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Passphrase for the private key}</td></tr>
+                                    <tr><td class="param-name">privateKey</td><td><span class="param-required">REQUIRED</span></td><td>${%Private key content}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "id": "auto-generated-id", "message": "SSH Key credential created successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id</label><input type="text" id="param-createSSH-id" placeholder="Leave blank for auto-generation" /></div>
+                                        <div class="swagger-try-field"><label>description</label><input type="text" id="param-createSSH-description" placeholder="Credential description" /></div>
+                                        <div class="swagger-try-field"><label>username <span class="field-required">*</span></label><input type="text" id="param-createSSH-username" placeholder="SSH username" /></div>
+                                        <div class="swagger-try-field"><label>passphrase</label><input type="text" id="param-createSSH-passphrase" placeholder="Passphrase (optional)" /></div>
+                                        <div class="swagger-try-field"><label>privateKey <span class="field-required">*</span></label><textarea id="param-createSSH-privateKey" placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"></textarea></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('createSSHKey', 'POST', {id: gv('param-createSSH-id'), description: gv('param-createSSH-description'), username: gv('param-createSSH-username'), passphrase: gv('param-createSSH-passphrase'), privateKey: gv('param-createSSH-privateKey')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-createSSHKey">
+                                        <div class="swagger-try-curl" id="curl-createSSHKey"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST updateSecretText -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">updateSecretText</span>
+                                <span class="swagger-summary">${%Update Secret Text credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Update an existing Secret Text credential.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                                    <tr><td class="param-name">description</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New description}</td></tr>
+                                    <tr><td class="param-name">secret</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New secret value - leave blank to keep current}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "Secret Text credential updated successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id <span class="field-required">*</span></label><input type="text" id="param-updateST-id" placeholder="Credential ID to update" /></div>
+                                        <div class="swagger-try-field"><label>description</label><input type="text" id="param-updateST-description" placeholder="New description" /></div>
+                                        <div class="swagger-try-field"><label>secret</label><input type="text" id="param-updateST-secret" placeholder="New secret value (leave blank to keep)" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('updateSecretText', 'POST', {id: gv('param-updateST-id'), description: gv('param-updateST-description'), secret: gv('param-updateST-secret')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-updateSecretText">
+                                        <div class="swagger-try-curl" id="curl-updateSecretText"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST updateUsernamePassword -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">updateUsernamePassword</span>
+                                <span class="swagger-summary">${%Update Username/Password credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Update an existing Username with Password credential.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                                    <tr><td class="param-name">description</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New description}</td></tr>
+                                    <tr><td class="param-name">username</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New username}</td></tr>
+                                    <tr><td class="param-name">password</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New password}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "Username/Password credential updated successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id <span class="field-required">*</span></label><input type="text" id="param-updateUP-id" placeholder="Credential ID to update" /></div>
+                                        <div class="swagger-try-field"><label>description</label><input type="text" id="param-updateUP-description" placeholder="New description" /></div>
+                                        <div class="swagger-try-field"><label>username</label><input type="text" id="param-updateUP-username" placeholder="New username" /></div>
+                                        <div class="swagger-try-field"><label>password</label><input type="text" id="param-updateUP-password" placeholder="New password" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('updateUsernamePassword', 'POST', {id: gv('param-updateUP-id'), description: gv('param-updateUP-description'), username: gv('param-updateUP-username'), password: gv('param-updateUP-password')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-updateUsernamePassword">
+                                        <div class="swagger-try-curl" id="curl-updateUsernamePassword"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST updateSSHKey -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">updateSSHKey</span>
+                                <span class="swagger-summary">${%Update SSH Key credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Update an existing SSH Username with Private Key credential.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID}</td></tr>
+                                    <tr><td class="param-name">description</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New description}</td></tr>
+                                    <tr><td class="param-name">username</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New username}</td></tr>
+                                    <tr><td class="param-name">passphrase</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New passphrase}</td></tr>
+                                    <tr><td class="param-name">privateKey</td><td><span class="param-optional">OPTIONAL</span></td><td>${%New private key}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "SSH Key credential updated successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id <span class="field-required">*</span></label><input type="text" id="param-updateSSH-id" placeholder="Credential ID to update" /></div>
+                                        <div class="swagger-try-field"><label>description</label><input type="text" id="param-updateSSH-description" placeholder="New description" /></div>
+                                        <div class="swagger-try-field"><label>username</label><input type="text" id="param-updateSSH-username" placeholder="New username" /></div>
+                                        <div class="swagger-try-field"><label>passphrase</label><input type="text" id="param-updateSSH-passphrase" placeholder="New passphrase" /></div>
+                                        <div class="swagger-try-field"><label>privateKey</label><textarea id="param-updateSSH-privateKey" placeholder="New private key content"></textarea></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('updateSSHKey', 'POST', {id: gv('param-updateSSH-id'), description: gv('param-updateSSH-description'), username: gv('param-updateSSH-username'), passphrase: gv('param-updateSSH-passphrase'), privateKey: gv('param-updateSSH-privateKey')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-updateSSHKey">
+                                        <div class="swagger-try-curl" id="curl-updateSSHKey"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST deleteCredential -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">deleteCredential</span>
+                                <span class="swagger-summary">${%Delete a credential}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Delete a credential from the folder.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">id</td><td><span class="param-required">REQUIRED</span></td><td>${%Credential ID to delete}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "Credential deleted successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>id <span class="field-required">*</span></label><input type="text" id="param-deleteCred-id" placeholder="Credential ID to delete" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('deleteCredential', 'POST', {id: gv('param-deleteCred-id')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-deleteCredential">
+                                        <div class="swagger-try-curl" id="curl-deleteCredential"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST generateKeyPair -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">generateKeyPair</span>
+                                <span class="swagger-summary">${%Generate SSH key pair}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Generate RSA 2048 key pair. Passphrase provided will encrypt the private key.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">passphrase</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Passphrase to encrypt the private key}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{
+  "success": true,
+  "data": { "privateKey": "-----BEGIN PRIVATE KEY-----...", "publicKey": "ssh-rsa AAAA..." }
+}</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>passphrase</label><input type="text" id="param-genKey-passphrase" placeholder="Passphrase (optional)" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('generateKeyPair', 'POST', {passphrase: gv('param-genKey-passphrase')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-generateKeyPair">
+                                        <div class="swagger-try-curl" id="curl-generateKeyPair"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- ==================== Audit Log ==================== -->
+                <div class="swagger-tag">
+                    <div class="swagger-tag-header" onclick="toggleTag(this)">
+                        <div class="swagger-tag-icon" style="background:#f93e3e;">A</div>
+                        <h2 class="swagger-tag-name">${%Audit Log}</h2>
+                        <span class="swagger-tag-desc">${%Audit log management APIs}</span>
+                    </div>
+                    <div class="swagger-tag-body">
+
+                        <!-- POST auditLog -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">auditLog</span>
+                                <span class="swagger-summary">${%Query audit logs}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Retrieve recent audit log entries.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">limit</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Max entries to return - default 100 max 1000}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{
+  "success": true,
+  "logs": ["[2025-01-01 12:00:00.000] user=admin folder=... action=CREATE ..."],
+  "count": 1,
+  "maxRetentionDays": 30
+}</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>limit</label><input type="text" id="param-auditLog-limit" placeholder="Default: 100, Max: 1000" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('auditLog', 'POST', {limit: gv('param-auditLog-limit')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-auditLog">
+                                        <div class="swagger-try-curl" id="curl-auditLog"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST configureAuditLog -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">configureAuditLog</span>
+                                <span class="swagger-summary">${%Configure audit log retention}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Set the maximum number of days to retain audit log files.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">maxRetentionDays</td><td><span class="param-required">REQUIRED</span></td><td>${%Max retention days 1 to 365}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "Audit log retention configured to 30 days." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>maxRetentionDays <span class="field-required">*</span></label><input type="text" id="param-configAudit-maxRetentionDays" placeholder="1 - 365" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('configureAuditLog', 'POST', {maxRetentionDays: gv('param-configAudit-maxRetentionDays')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-configureAuditLog">
+                                        <div class="swagger-try-curl" id="curl-configureAuditLog"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- ==================== Backup & Restore ==================== -->
+                <div class="swagger-tag">
+                    <div class="swagger-tag-header" onclick="toggleTag(this)">
+                        <div class="swagger-tag-icon" style="background:#e9967a;">B</div>
+                        <h2 class="swagger-tag-name">${%Backup &amp; Restore}</h2>
+                        <span class="swagger-tag-desc">${%Backup plus restore APIs}</span>
+                    </div>
+                    <div class="swagger-tag-body">
+
+                        <!-- POST exportCredentials -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">exportCredentials</span>
+                                <span class="swagger-summary">${%Export credentials as encrypted text}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Export all credentials as AES-256-GCM encrypted text data.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">password</td><td><span class="param-required">REQUIRED</span></td><td>${%Encryption password min 8 characters}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "data": "base64-encrypted-data...", "folder": "folder-name", "message": "Credentials exported successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>password <span class="field-required">*</span></label><input type="text" id="param-exportCred-password" placeholder="Encryption password (min 8 chars)" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('exportCredentials', 'POST', {password: gv('param-exportCred-password')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-exportCredentials">
+                                        <div class="swagger-try-curl" id="curl-exportCredentials"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST exportCredentialsFile -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">exportCredentialsFile</span>
+                                <span class="swagger-summary">${%Export credentials as encrypted file download}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Export all credentials as AES-256-GCM encrypted file .enc for download.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">password</td><td><span class="param-required">REQUIRED</span></td><td>${%Encryption password min 8 characters}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">${%Binary file download credentials-backup-folder-timestamp.enc}</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>password <span class="field-required">*</span></label><input type="text" id="param-exportFile-password" placeholder="Encryption password (min 8 chars)" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryFileDownload('exportCredentialsFile', {password: gv('param-exportFile-password')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-exportCredentialsFile">
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST importCredentials -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">importCredentials</span>
+                                <span class="swagger-summary">${%Import credentials from encrypted data}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Import credentials from AES-256-GCM encrypted text data.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">password</td><td><span class="param-required">REQUIRED</span></td><td>${%Decryption password}</td></tr>
+                                    <tr><td class="param-name">data</td><td><span class="param-required">REQUIRED</span></td><td>${%Encrypted backup data}</td></tr>
+                                    <tr><td class="param-name">overwrite</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Overwrite existing credentials - yes / no}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "importResult": { "imported": 2, "updated": 0, "skipped": 1, "failed": 0 }, "message": "Credentials imported successfully" }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>password <span class="field-required">*</span></label><input type="text" id="param-importCred-password" placeholder="Decryption password" /></div>
+                                        <div class="swagger-try-field"><label>data <span class="field-required">*</span></label><textarea id="param-importCred-data" placeholder="Paste encrypted backup data here"></textarea></div>
+                                        <div class="swagger-try-field"><label>overwrite</label><input type="text" id="param-importCred-overwrite" placeholder="true / false" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('importCredentials', 'POST', {password: gv('param-importCred-password'), data: gv('param-importCred-data'), overwrite: gv('param-importCred-overwrite')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-importCredentials">
+                                        <div class="swagger-try-curl" id="curl-importCredentials"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST importCredentialsFile -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">importCredentialsFile</span>
+                                <span class="swagger-summary">${%Import credentials from uploaded file}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Import credentials from an uploaded encrypted backup file.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">password</td><td><span class="param-required">REQUIRED</span></td><td>${%Decryption password}</td></tr>
+                                    <tr><td class="param-name">data</td><td><span class="param-required">REQUIRED</span></td><td>${%File content as text}</td></tr>
+                                    <tr><td class="param-name">overwrite</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Overwrite existing credentials}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "importResult": { "imported": 2, "updated": 0, "skipped": 1, "failed": 0 }, "message": "Credentials imported successfully" }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>password <span class="field-required">*</span></label><input type="text" id="param-importFile-password" placeholder="Decryption password" /></div>
+                                        <div class="swagger-try-field"><label>data <span class="field-required">*</span></label><textarea id="param-importFile-data" placeholder="Paste file content here or use file upload below"></textarea></div>
+                                        <div class="swagger-try-field"><label></label><input type="file" id="param-importFile-file" accept=".enc,.txt" onchange="loadFileContent(this, 'param-importFile-data')" /></div>
+                                        <div class="swagger-try-field"><label>overwrite</label><input type="text" id="param-importFile-overwrite" placeholder="true / false" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('importCredentialsFile', 'POST', {password: gv('param-importFile-password'), data: gv('param-importFile-data'), overwrite: gv('param-importFile-overwrite')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-importCredentialsFile">
+                                        <div class="swagger-try-curl" id="curl-importCredentialsFile"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- ==================== External Storage ==================== -->
+                <div class="swagger-tag">
+                    <div class="swagger-tag-header" onclick="toggleTag(this)">
+                        <div class="swagger-tag-icon" style="background:#61affe;">E</div>
+                        <h2 class="swagger-tag-name">${%External Storage}</h2>
+                        <span class="swagger-tag-desc">${%External storage management APIs}</span>
+                    </div>
+                    <div class="swagger-tag-body">
+
+                        <!-- POST storageStatus -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">storageStatus</span>
+                                <span class="swagger-summary">${%Get external storage status}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Get the current status with configuration of the external storage backend.}</div>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{
+  "success": true,
+  "enabled": true,
+  "syncMode": "MANUAL",
+  "storageType": "FILE",
+  "connected": true,
+  "encrypted": true,
+  "storagePath": "/custom/path",
+  "configInfo": { "type": "FILE", "path": "/custom/path", "writable": true, "encrypted": true }
+}</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('storageStatus', 'POST')">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-storageStatus">
+                                        <div class="swagger-try-curl" id="curl-storageStatus"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST configureStorage -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">configureStorage</span>
+                                <span class="swagger-summary">${%Configure external storage}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Configure the external storage backend settings.}</div>
+                                <div class="swagger-params-title">${%Parameters}</div>
+                                <table class="swagger-params">
+                                    <tr><th>${%Name}</th><th>${%Required}</th><th>${%Description}</th></tr>
+                                    <tr><td class="param-name">enabled</td><td><span class="param-required">REQUIRED</span></td><td>${%Enable/disable external storage - yes / no}</td></tr>
+                                    <tr><td class="param-name">syncMode</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Sync mode MANUAL AUTO_SYNC EXTERNAL_ONLY}</td></tr>
+                                    <tr><td class="param-name">storagePath</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Custom storage path - leave blank for default}</td></tr>
+                                    <tr><td class="param-name">encryptionPassword</td><td><span class="param-optional">OPTIONAL</span></td><td>${%Password for AES-256-GCM encryption}</td></tr>
+                                </table>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "External storage configured successfully." }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-inputs">
+                                        <div class="swagger-try-field"><label>enabled <span class="field-required">*</span></label><input type="text" id="param-configStorage-enabled" placeholder="true / false" /></div>
+                                        <div class="swagger-try-field"><label>syncMode</label><input type="text" id="param-configStorage-syncMode" placeholder="MANUAL / AUTO_SYNC / EXTERNAL_ONLY" /></div>
+                                        <div class="swagger-try-field"><label>storagePath</label><input type="text" id="param-configStorage-storagePath" placeholder="Custom path (leave blank for default)" /></div>
+                                        <div class="swagger-try-field"><label>encryptionPassword</label><input type="text" id="param-configStorage-encryptionPassword" placeholder="AES-256-GCM encryption password" /></div>
+                                    </div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('configureStorage', 'POST', {enabled: gv('param-configStorage-enabled'), syncMode: gv('param-configStorage-syncMode'), storagePath: gv('param-configStorage-storagePath'), encryptionPassword: gv('param-configStorage-encryptionPassword')})">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-configureStorage">
+                                        <div class="swagger-try-curl" id="curl-configureStorage"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST testStorageConnection -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">testStorageConnection</span>
+                                <span class="swagger-summary">${%Test storage connection}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Test the connection to the external storage backend.}</div>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "connected": true }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('testStorageConnection', 'POST')">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-testStorageConnection">
+                                        <div class="swagger-try-curl" id="curl-testStorageConnection"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- POST syncToExternal -->
+                        <div class="swagger-endpoint">
+                            <div class="swagger-endpoint-header" onclick="toggleEndpoint(this)">
+                                <span class="swagger-method method-post">POST</span>
+                                <span class="swagger-path">syncToExternal</span>
+                                <span class="swagger-summary">${%Sync credentials to external storage}</span>
+                            </div>
+                            <div class="swagger-endpoint-body">
+                                <div class="swagger-endpoint-desc">${%Asynchronously sync all credentials to the external storage backend.}</div>
+                                <div class="swagger-response-title">${%Response}</div>
+                                <div class="swagger-response-code">200 OK</div>
+                                <pre class="swagger-response-pre">{ "success": true, "message": "Sync started in background for 5 credentials" }</pre>
+                                <div class="swagger-try-section">
+                                    <div class="swagger-try-title">${%Try it}</div>
+                                    <div class="swagger-try-btn">
+                                        <button onclick="tryApi('syncToExternal', 'POST')">${%Try it}</button>
+                                    </div>
+                                    <div class="swagger-try-result" id="result-syncToExternal">
+                                        <div class="swagger-try-curl" id="curl-syncToExternal"></div>
+                                        <div class="swagger-try-result-label">${%Response}</div>
+                                        <pre></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- ==================== Models ==================== -->
+                <div class="swagger-models">
+                    <h2>${%Schemas}</h2>
+                    <div class="swagger-model">
+                        <div class="swagger-model-header" onclick="toggleModel(this)">ApiResponse</div>
+                        <div class="swagger-model-body">
+                            <table><tr><th>${%Field}</th><th>${%Type}</th><th>${%Description}</th></tr>
+                            <tr><td>success</td><td>boolean</td><td>${%Operation result status}</td></tr>
+                            <tr><td>message</td><td>string</td><td>${%Result message}</td></tr></table>
+                        </div>
+                    </div>
+                    <div class="swagger-model">
+                        <div class="swagger-model-header" onclick="toggleModel(this)">Credential</div>
+                        <div class="swagger-model-body">
+                            <table><tr><th>${%Field}</th><th>${%Type}</th><th>${%Description}</th></tr>
+                            <tr><td>id</td><td>string</td><td>${%Credential ID}</td></tr>
+                            <tr><td>description</td><td>string</td><td>${%Description}</td></tr>
+                            <tr><td>type</td><td>string</td><td>${%Credential type display name}</td></tr>
+                            <tr><td>typeKey</td><td>string</td><td>USERNAME_PASSWORD | SECRET_TEXT | SSH_KEY</td></tr>
+                            <tr><td>username</td><td>string</td><td>${%Username for USERNAME_PASSWORD plus SSH_KEY types}</td></tr></table>
+                        </div>
+                    </div>
+                    <div class="swagger-model">
+                        <div class="swagger-model-header" onclick="toggleModel(this)">ImportResult</div>
+                        <div class="swagger-model-body">
+                            <table><tr><th>${%Field}</th><th>${%Type}</th><th>${%Description}</th></tr>
+                            <tr><td>imported</td><td>integer</td><td>${%Number of newly imported credentials}</td></tr>
+                            <tr><td>updated</td><td>integer</td><td>${%Number of updated existing credentials}</td></tr>
+                            <tr><td>skipped</td><td>integer</td><td>${%Number of skipped credentials}</td></tr>
+                            <tr><td>failed</td><td>integer</td><td>${%Number of failed credentials}</td></tr></table>
+                        </div>
+                    </div>
+                    <div class="swagger-model">
+                        <div class="swagger-model-header" onclick="toggleModel(this)">StorageConfig</div>
+                        <div class="swagger-model-body">
+                            <table><tr><th>${%Field}</th><th>${%Type}</th><th>${%Description}</th></tr>
+                            <tr><td>enabled</td><td>boolean</td><td>${%External storage enabled status}</td></tr>
+                            <tr><td>syncMode</td><td>string</td><td>MANUAL | AUTO_SYNC | EXTERNAL_ONLY</td></tr>
+                            <tr><td>storageType</td><td>string</td><td>${%Storage backend type}</td></tr>
+                            <tr><td>connected</td><td>boolean</td><td>${%Connection status}</td></tr>
+                            <tr><td>encrypted</td><td>boolean</td><td>${%Encryption enabled status}</td></tr>
+                            <tr><td>storagePath</td><td>string</td><td>${%Custom storage path}</td></tr></table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </l:main_panel>
+    </l:layout>
+</j:jelly>
