@@ -588,9 +588,16 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Password must be at least 8 characters");
         }
 
+        // 解析选中的凭据ID
+        String selectedIdsParam = req.getParameter("selectedIds");
+        java.util.Set<String> selectedIds = null;
+        if (selectedIdsParam != null && !selectedIdsParam.isEmpty()) {
+            selectedIds = new java.util.HashSet<>(java.util.Arrays.asList(selectedIdsParam.split(",")));
+        }
+
         try {
-            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) getJenkinsInstance(), password);
-            AuditLogger.logExport("system", "exported system credentials");
+            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) getJenkinsInstance(), password, selectedIds);
+            AuditLogger.logExport("system", "exported system credentials" + (selectedIds != null ? " (selected: " + selectedIds.size() + ")" : ""));
 
             JSONObject result = new JSONObject();
             result.put("success", true);
@@ -617,8 +624,15 @@ public class SystemCredentialsAction implements RootAction {
         }
 
         try {
-            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) getJenkinsInstance(), password);
-            AuditLogger.logExport("system", "exported system credentials as file");
+            // 解析选中的凭据ID
+            String selectedIdsParam = req.getParameter("selectedIds");
+            java.util.Set<String> selectedIds = null;
+            if (selectedIdsParam != null && !selectedIdsParam.isEmpty()) {
+                selectedIds = new java.util.HashSet<>(java.util.Arrays.asList(selectedIdsParam.split(",")));
+            }
+
+            String encryptedData = CredentialBackupService.exportCredentials((ItemGroup<?>) getJenkinsInstance(), password, selectedIds);
+            AuditLogger.logExport("system", "exported system credentials as file" + (selectedIds != null ? " (selected: " + selectedIds.size() + ")" : ""));
 
             String filename = "credentials-backup-system-"
                     + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
@@ -645,6 +659,7 @@ public class SystemCredentialsAction implements RootAction {
         String password = req.getParameter("password");
         String encryptedData = req.getParameter("data");
         String overwriteParam = req.getParameter("overwrite");
+        String selectedIndicesParam = req.getParameter("selectedIndices");
 
         if (password == null || password.isEmpty()) {
             return errorResponse("Decryption password is required");
@@ -655,8 +670,23 @@ public class SystemCredentialsAction implements RootAction {
 
         boolean overwrite = "true".equals(overwriteParam);
 
+        // 解析选中的凭据索引
+        java.util.Set<Integer> selectedIndices = null;
+        if (selectedIndicesParam != null && !selectedIndicesParam.isEmpty()) {
+            selectedIndices = new java.util.HashSet<>();
+            for (String idx : selectedIndicesParam.split(",")) {
+                try {
+                    selectedIndices.add(Integer.parseInt(idx.trim()));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials((ItemGroup<?>) getJenkinsInstance(), encryptedData, password, overwrite);
+            // 先解密获取JSON，再按选中索引导入
+            String plainJson = CredentialBackupService.decryptData(encryptedData, password);
+            JSONObject importObj = JSONObject.fromObject(plainJson);
+            JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
+                    (ItemGroup<?>) getJenkinsInstance(), importObj, overwrite, selectedIndices);
             AuditLogger.logImport("system", "imported: " + importResult.toString());
 
             JSONObject result = new JSONObject();
@@ -669,6 +699,63 @@ public class SystemCredentialsAction implements RootAction {
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import system credentials", e);
             return errorResponse("Failed to import credentials: " + e.getMessage());
+        }
+    }
+
+    /**
+     * API: 解析加密备份数据，返回凭据列表（不实际导入）
+     * 用于导入前预览凭据列表，让用户选择要导入的凭据
+     */
+    @RequirePOST
+    public HttpResponse doParseImportData(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
+
+        String password = req.getParameter("password");
+        String encryptedData = req.getParameter("data");
+
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Decryption password is required");
+        }
+        if (encryptedData == null || encryptedData.isEmpty()) {
+            return errorResponse("Encrypted data is required");
+        }
+
+        try {
+            String plainJson = CredentialBackupService.decryptData(encryptedData, password);
+            JSONObject importObj = JSONObject.fromObject(plainJson);
+
+            // 返回凭据列表（隐藏敏感信息）
+            net.sf.json.JSONArray credentials = importObj.optJSONArray("credentials");
+            net.sf.json.JSONArray previewList = new net.sf.json.JSONArray();
+            if (credentials != null) {
+                for (int i = 0; i < credentials.size(); i++) {
+                    JSONObject cred = credentials.getJSONObject(i);
+                    JSONObject preview = new JSONObject();
+                    preview.put("index", i);
+                    preview.put("id", cred.optString("id", ""));
+                    preview.put("description", cred.optString("description", ""));
+                    preview.put("type", cred.optString("type", ""));
+                    preview.put("scope", cred.optString("scope", ""));
+                    if (cred.has("username")) {
+                        preview.put("username", cred.getString("username"));
+                    }
+                    previewList.add(preview);
+                }
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("folder", importObj.optString("folder", ""));
+            result.put("exportTime", importObj.optString("exportTime", ""));
+            result.put("count", previewList.size());
+            result.put("credentials", previewList);
+            result.put("encryptedData", encryptedData); // 回传加密数据，供后续导入使用
+            return jsonResult(result);
+        } catch (javax.crypto.AEADBadTagException e) {
+            return errorResponse("Decryption failed: wrong password or corrupted data");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to parse import data", e);
+            return errorResponse("Failed to parse data: " + e.getMessage());
         }
     }
 
@@ -881,7 +968,7 @@ public class SystemCredentialsAction implements RootAction {
     /**
      * API: 导出所有目录任务的凭据为加密ZIP包
      * ZIP包结构与Jenkins目录任务路径保持一致
-     * 例如: dev/team/credentials.json.enc, jenkins_root.json.enc
+     * 例如: dev/team.enc, jenkins_root.enc
      */
     @RequirePOST
     public HttpResponse doExportAllAsZip(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -923,12 +1010,14 @@ public class SystemCredentialsAction implements RootAction {
                     // 加密凭据数据
                     String encryptedData = CredentialBackupService.encryptData(allData.toString(), password);
 
-                    // ZIP内路径与Jenkins目录层级一致
+                    // ZIP内路径与额外存储路径一致：fullName/taskName.enc
                     String zipEntryName;
                     if ("system".equals(folderName)) {
-                        zipEntryName = "jenkins_root.json.enc";
+                        zipEntryName = "jenkins_root.enc";
                     } else {
-                        zipEntryName = folderName + "/credentials.json.enc";
+                        int lastSlash = folderName.lastIndexOf('/');
+                        String taskName = lastSlash > 0 ? folderName.substring(lastSlash + 1) : folderName;
+                        zipEntryName = folderName + "/" + taskName + ".enc";
                     }
 
                     ZipEntry ze = new ZipEntry(zipEntryName);
@@ -960,6 +1049,103 @@ public class SystemCredentialsAction implements RootAction {
     }
 
     /**
+     * API: 解析加密ZIP包，返回所有凭据列表（不实际导入）
+     * 用于导入前预览凭据列表，让用户选择要导入的凭据
+     */
+    @RequirePOST
+    public HttpResponse doParseZipData(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
+
+        String password = req.getParameter("password");
+        String encryptedZipData = req.getParameter("data");
+
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Decryption password is required");
+        }
+        if (encryptedZipData == null || encryptedZipData.isEmpty()) {
+            return errorResponse("ZIP data is required");
+        }
+
+        try {
+            byte[] zipBytes = java.util.Base64.getDecoder().decode(encryptedZipData);
+            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(zipBytes);
+
+            net.sf.json.JSONArray allPreview = new net.sf.json.JSONArray();
+
+            try (ZipInputStream zis = new ZipInputStream(bais)) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    try {
+                        java.io.ByteArrayOutputStream entryBaos = new java.io.ByteArrayOutputStream();
+                        byte[] buffer = new byte[4096];
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            entryBaos.write(buffer, 0, len);
+                        }
+                        String encryptedContent = entryBaos.toString(java.nio.charset.StandardCharsets.UTF_8.name());
+
+                        String decryptedJson = CredentialBackupService.decryptData(encryptedContent, password);
+                        JSONObject importObj = JSONObject.fromObject(decryptedJson);
+
+                        String entryPath = entry.getName();
+                        String folderName;
+                        if ("jenkins_root.enc".equals(entryPath)) {
+                            folderName = "system";
+                        } else {
+                            // 新路径格式: test/test.enc → folderName="test", dev/team/team.enc → folderName="dev/team"
+                            // .enc 文件所在目录的路径就是 folderName
+                            int lastSlash = entryPath.lastIndexOf('/');
+                            if (lastSlash > 0) {
+                                folderName = entryPath.substring(0, lastSlash);
+                            } else {
+                                // 兼容旧格式: test.enc → folderName="test"
+                                folderName = entryPath;
+                                if (folderName.endsWith(".enc")) {
+                                    folderName = folderName.substring(0, folderName.length() - 4);
+                                }
+                            }
+                        }
+
+                        net.sf.json.JSONArray credentials = importObj.optJSONArray("credentials");
+                        if (credentials != null) {
+                            for (int i = 0; i < credentials.size(); i++) {
+                                JSONObject cred = credentials.getJSONObject(i);
+                                JSONObject preview = new JSONObject();
+                                preview.put("folderEntry", entryPath);
+                                preview.put("folderName", folderName);
+                                preview.put("index", i);
+                                preview.put("id", cred.optString("id", ""));
+                                preview.put("description", cred.optString("description", ""));
+                                preview.put("type", cred.optString("type", ""));
+                                preview.put("scope", cred.optString("scope", ""));
+                                if (cred.has("username")) {
+                                    preview.put("username", cred.getString("username"));
+                                }
+                                allPreview.add(preview);
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, "Failed to parse ZIP entry: " + entry.getName(), e);
+                    }
+                    zis.closeEntry();
+                }
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("count", allPreview.size());
+            result.put("credentials", allPreview);
+            return jsonResult(result);
+        } catch (Exception e) {
+            if (e.getCause() instanceof javax.crypto.AEADBadTagException) {
+                return errorResponse("Decryption failed: wrong password or corrupted data");
+            }
+            LOGGER.log(Level.SEVERE, "Failed to parse ZIP data", e);
+            return errorResponse("Failed to parse data: " + e.getMessage());
+        }
+    }
+
+    /**
      * API: 从加密ZIP包导入所有目录任务的凭据
      * ZIP包结构与Jenkins目录任务路径保持一致
      */
@@ -970,6 +1156,7 @@ public class SystemCredentialsAction implements RootAction {
         String password = req.getParameter("password");
         String encryptedZipData = req.getParameter("data");
         String overwriteParam = req.getParameter("overwrite");
+        String selectedEntriesParam = req.getParameter("selectedEntries");
 
         if (password == null || password.isEmpty()) {
             return errorResponse("Decryption password is required");
@@ -979,6 +1166,12 @@ public class SystemCredentialsAction implements RootAction {
         }
 
         boolean overwrite = "true".equals(overwriteParam);
+
+        // 解析选中的条目集合，格式为 "folderEntry:index"（如 "dev/team.enc:0,jenkins_root.enc:1"）
+        java.util.Set<String> selectedEntries = null;
+        if (selectedEntriesParam != null && !selectedEntriesParam.isEmpty()) {
+            selectedEntries = new java.util.HashSet<>(java.util.Arrays.asList(selectedEntriesParam.split(",")));
+        }
 
         try {
             // 前端通过FileReader读取ZIP文件并Base64编码
@@ -1011,11 +1204,21 @@ public class SystemCredentialsAction implements RootAction {
                         // 确定目标ItemGroup
                         String entryPath = entry.getName();
                         ItemGroup<?> targetItemGroup;
-                        if ("jenkins_root.json.enc".equals(entryPath)) {
+                        if ("jenkins_root.enc".equals(entryPath)) {
                             targetItemGroup = getJenkinsInstance();
                         } else {
-                            // 从路径提取folderName: "dev/team/credentials.json.enc" → "dev/team"
-                            String folderFullName = entryPath.replace("/credentials.json.enc", "").replace("\\credentials.json.enc", "");
+                            // 从路径提取folderName: "test/test.enc" → "test", "dev/team/team.enc" → "dev/team"
+                            String folderFullName;
+                            int lastSlash = entryPath.lastIndexOf('/');
+                            if (lastSlash > 0) {
+                                folderFullName = entryPath.substring(0, lastSlash);
+                            } else {
+                                // 兼容旧格式: "test.enc" → "test"
+                                folderFullName = entryPath;
+                                if (folderFullName.endsWith(".enc")) {
+                                    folderFullName = folderFullName.substring(0, folderFullName.length() - 4);
+                                }
+                            }
                             targetItemGroup = findFolderByFullName(folderFullName);
                             if (targetItemGroup == null) {
                                 LOGGER.warning("Folder not found for ZIP entry: " + entryPath + ", skipping");
@@ -1024,9 +1227,22 @@ public class SystemCredentialsAction implements RootAction {
                             }
                         }
 
+                        // 计算该条目中选中的凭据索引
+                        java.util.Set<Integer> selectedIndices = null;
+                        if (selectedEntries != null) {
+                            selectedIndices = new java.util.HashSet<>();
+                            for (String sel : selectedEntries) {
+                                if (sel.startsWith(entryPath + ":")) {
+                                    try {
+                                        selectedIndices.add(Integer.parseInt(sel.substring(entryPath.length() + 1)));
+                                    } catch (NumberFormatException ignored) {}
+                                }
+                            }
+                        }
+
                         // 导入凭据
                         JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
-                                targetItemGroup, importObj, overwrite);
+                                targetItemGroup, importObj, overwrite, selectedIndices);
                         totalImported += importResult.optInt("imported", 0);
                         totalUpdated += importResult.optInt("updated", 0);
                         totalSkipped += importResult.optInt("skipped", 0);

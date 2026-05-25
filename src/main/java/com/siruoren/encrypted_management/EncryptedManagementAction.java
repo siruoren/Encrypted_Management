@@ -909,9 +909,16 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Password must be at least 8 characters");
         }
 
+        // 解析选中的凭据ID
+        String selectedIdsParam = req.getParameter("selectedIds");
+        java.util.Set<String> selectedIds = null;
+        if (selectedIdsParam != null && !selectedIdsParam.isEmpty()) {
+            selectedIds = new java.util.HashSet<>(java.util.Arrays.asList(selectedIdsParam.split(",")));
+        }
+
         try {
-            String encryptedData = CredentialBackupService.exportCredentials(folder, password);
-            AuditLogger.logExport(folder.getFullName(), "exported " + folder.getFullName());
+            String encryptedData = CredentialBackupService.exportCredentials(folder, password, selectedIds);
+            AuditLogger.logExport(folder.getFullName(), "exported " + folder.getFullName() + (selectedIds != null ? " (selected: " + selectedIds.size() + ")" : ""));
 
             JSONObject result = new JSONObject();
             result.put("success", true);
@@ -940,9 +947,16 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Password must be at least 8 characters");
         }
 
+        // 解析选中的凭据ID
+        String selectedIdsParam = req.getParameter("selectedIds");
+        java.util.Set<String> selectedIds = null;
+        if (selectedIdsParam != null && !selectedIdsParam.isEmpty()) {
+            selectedIds = new java.util.HashSet<>(java.util.Arrays.asList(selectedIdsParam.split(",")));
+        }
+
         try {
-            String encryptedData = CredentialBackupService.exportCredentials(folder, password);
-            AuditLogger.logExport(folder.getFullName(), "exported as file: " + folder.getFullName());
+            String encryptedData = CredentialBackupService.exportCredentials(folder, password, selectedIds);
+            AuditLogger.logExport(folder.getFullName(), "exported as file: " + folder.getFullName() + (selectedIds != null ? " (selected: " + selectedIds.size() + ")" : ""));
 
             String filename = "credentials-backup-" + folder.getFullName().replaceAll("[/\\\\]", "-")
                     + "-" + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
@@ -963,6 +977,57 @@ public class EncryptedManagementAction implements Action {
     }
 
     /**
+     * API: 解析导入数据并返回凭据列表（不实际导入）
+     */
+    @RequirePOST
+    public HttpResponse doParseImportData(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String password = req.getParameter("password");
+        String encryptedData = req.getParameter("data");
+
+        if (password == null || password.isEmpty()) {
+            return errorResponse("Decryption password is required");
+        }
+        if (encryptedData == null || encryptedData.isEmpty()) {
+            return errorResponse("Encrypted data is required");
+        }
+
+        try {
+            String plainJson = CredentialBackupService.decryptData(encryptedData, password);
+            JSONObject importObj = JSONObject.fromObject(plainJson);
+            net.sf.json.JSONArray credentials = importObj.optJSONArray("credentials");
+            net.sf.json.JSONArray previewList = new net.sf.json.JSONArray();
+            if (credentials != null) {
+                for (int i = 0; i < credentials.size(); i++) {
+                    JSONObject cred = credentials.getJSONObject(i);
+                    JSONObject preview = new JSONObject();
+                    preview.put("index", i);
+                    preview.put("id", cred.optString("id", ""));
+                    preview.put("description", cred.optString("description", ""));
+                    preview.put("type", cred.optString("type", ""));
+                    preview.put("scope", cred.optString("scope", ""));
+                    if (cred.has("username")) {
+                        preview.put("username", cred.getString("username"));
+                    }
+                    previewList.add(preview);
+                }
+            }
+
+            JSONObject result = new JSONObject();
+            result.put("success", true);
+            result.put("credentials", previewList);
+            result.put("encryptedData", encryptedData);
+            return jsonResult(result);
+        } catch (javax.crypto.AEADBadTagException e) {
+            return errorResponse("Decryption failed: wrong password or corrupted data");
+        } catch (Exception e) {
+            LOGGER.log(Level.SEVERE, "Failed to parse import data", e);
+            return errorResponse("Failed to parse data: " + e.getMessage());
+        }
+    }
+
+    /**
      * API: 从加密数据导入凭据
      */
     @RequirePOST
@@ -972,6 +1037,7 @@ public class EncryptedManagementAction implements Action {
         String password = req.getParameter("password");
         String encryptedData = req.getParameter("data");
         String overwriteParam = req.getParameter("overwrite");
+        String selectedIndicesParam = req.getParameter("selectedIndices");
 
         if (password == null || password.isEmpty()) {
             return errorResponse("Decryption password is required");
@@ -982,8 +1048,19 @@ public class EncryptedManagementAction implements Action {
 
         boolean overwrite = "true".equals(overwriteParam);
 
+        // 解析选中的凭据索引
+        java.util.Set<Integer> selectedIndices = null;
+        if (selectedIndicesParam != null && !selectedIndicesParam.isEmpty()) {
+            selectedIndices = new java.util.HashSet<>();
+            for (String idx : selectedIndicesParam.split(",")) {
+                try {
+                    selectedIndices.add(Integer.parseInt(idx.trim()));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials(folder, encryptedData, password, overwrite);
+            JSONObject importResult = CredentialBackupService.importCredentials(folder, encryptedData, password, overwrite, selectedIndices);
             AuditLogger.logImport(folder.getFullName(), "imported: " + importResult.toString());
 
             JSONObject result = new JSONObject();

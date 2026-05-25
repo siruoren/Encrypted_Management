@@ -211,12 +211,21 @@
 
             <!-- ==================== 导出凭据弹窗 ==================== -->
             <div id="export-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
+                <div style="background:#fff; margin:5% auto; padding:2em; max-width:700px; border-radius:8px; max-height:80vh; overflow-y:auto;">
                     <h2>${%Export Credentials}</h2>
                     <div class="jenkins-form-item">
                         <div class="jenkins-form-label">${%Encryption Password}</div>
                         <div class="jenkins-form-control">
                             <input type="password" id="exportPassword" class="jenkins-input" placeholder="${%At least 8 characters}"/>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <div class="jenkins-form-label">${%Select Credentials}</div>
+                        <div style="margin-bottom:0.5em;">
+                            <label><input type="checkbox" id="exportSelectAll" onchange="toggleExportSelectAll()"/> ${%Select All}</label>
+                        </div>
+                        <div id="export-credential-list" style="max-height:200px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
+                            <span style="color:#999;">${%Loading credentials...}</span>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
@@ -238,7 +247,7 @@
 
             <!-- ==================== 导入凭据弹窗 ==================== -->
             <div id="import-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
+                <div style="background:#fff; margin:5% auto; padding:2em; max-width:700px; border-radius:8px; max-height:80vh; overflow-y:auto;">
                     <h2>${%Import Credentials}</h2>
                     <div class="jenkins-form-item">
                         <div class="jenkins-form-label">${%Encryption Password}</div>
@@ -272,11 +281,33 @@
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <label><input type="checkbox" id="importOverwrite"/> ${%Overwrite existing credentials}</label>
+                        <div class="jenkins-form-label">${%Conflict Resolution}</div>
+                        <div class="jenkins-form-control">
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="skip" checked="checked"/> ${%Skip existing credentials}</label>
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="overwrite"/> ${%Overwrite existing credentials}</label>
+                        </div>
                     </div>
-                    <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="doImport()">${%Import}</button>
-                        <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                    <!-- 第一步：解析数据 -->
+                    <div id="import-step1">
+                        <div class="jenkins-form-item">
+                            <button class="jenkins-button jenkins-button--primary" onclick="doParseImport()">${%Parse Data}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        </div>
+                    </div>
+                    <!-- 第二步：选择凭据并导入 -->
+                    <div id="import-step2" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Select Credentials to Import}</div>
+                            <div style="margin-bottom:0.5em;">
+                                <label><input type="checkbox" id="importSelectAll" checked="checked" onchange="toggleImportSelectAll()"/> ${%Select All}</label>
+                            </div>
+                            <div id="import-credential-list" style="max-height:250px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <button class="jenkins-button jenkins-button--primary" onclick="doImportSelected()">${%Import Selected}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -374,11 +405,33 @@
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <label><input type="checkbox" id="importAllZipOverwrite"/> ${%Overwrite existing credentials}</label>
+                        <div class="jenkins-form-label">${%Conflict Resolution}</div>
+                        <div class="jenkins-form-control">
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="zipOverwriteMode" value="skip" checked="checked"/> ${%Skip existing credentials}</label>
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="zipOverwriteMode" value="overwrite"/> ${%Overwrite existing credentials}</label>
+                        </div>
                     </div>
-                    <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="doImportAllZip()">${%Import}</button>
-                        <button class="jenkins-button" onclick="closeDialog('import-all-zip-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                    <!-- 第一步：选择ZIP文件并解析 -->
+                    <div id="import-zip-step1">
+                        <div class="jenkins-form-item">
+                            <button class="jenkins-button jenkins-button--primary" onclick="doParseZip()">${%Parse ZIP}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-all-zip-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        </div>
+                    </div>
+                    <!-- 第二步：选择凭据并导入 -->
+                    <div id="import-zip-step2" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%Select Credentials to Import}</div>
+                            <div style="margin-bottom:0.5em;">
+                                <label><input type="checkbox" id="importZipSelectAll" checked="checked" onchange="toggleImportZipSelectAll()"/> ${%Select All}</label>
+                            </div>
+                            <div id="import-zip-credential-list" style="max-height:300px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <button class="jenkins-button jenkins-button--primary" onclick="doImportAllZipSelected()">${%Import Selected}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-all-zip-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -428,6 +481,7 @@
                         exportFailed: "${%Export failed}",
                         importSuccess: "${%Import completed}",
                         importFailed: "${%Import failed}",
+                        selectCredentials: "${%Please select at least one credential}",
                         storageType: "${%Storage Type}",
                         connected: "${%Connected}",
                         enabled: "${%Enabled}",
@@ -944,11 +998,85 @@
 
                     // ==================== 导出弹窗 ====================
 
+                    var exportCredentialList = [];
+
                     function openExportDialog() {
                         document.getElementById('exportPassword').value = '';
                         document.getElementById('exportData').value = '';
                         document.getElementById('export-result-area').style.display = 'none';
+                        document.getElementById('exportSelectAll').checked = false;
                         document.getElementById('export-dialog').style.display = '';
+                        // 加载凭据列表
+                        loadExportCredentialList();
+                    }
+
+                    function loadExportCredentialList() {
+                        var listDiv = document.getElementById('export-credential-list');
+                        listDiv.innerHTML = '<span style="color:#999;">' + i18n.loading + '</span>';
+                        secureFetch(credentialsUrl + 'listCredentials', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            }
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success && data.credentials) {
+                                exportCredentialList = data.credentials;
+                                renderExportCredentialList();
+                            } else {
+                                listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            }
+                        })
+                        .catch(function(err) {
+                            listDiv.innerHTML = '<span style="color:red;">' + i18n.requestFailed + '</span>';
+                        });
+                    }
+
+                    function renderExportCredentialList() {
+                        var listDiv = document.getElementById('export-credential-list');
+                        if (exportCredentialList.length === 0) {
+                            listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            return;
+                        }
+                        var html = '';
+                        for (var i = 0; i < exportCredentialList.length; i++) {
+                            var c = exportCredentialList[i];
+                            html += '<div style="padding:4px 0; border-bottom:1px solid #eee;">';
+                            html += '<label><input type="checkbox" class="export-cred-check" data-id="' + c.id + '" onchange="updateExportSelectAll()"/> ';
+                            html += '<strong>' + (c.description || c.id) + '</strong>';
+                            html += ' <span style="color:#666; font-size:0.85em;">[' + c.type + ']</span>';
+                            if (c.username) html += ' <span style="color:#666; font-size:0.85em;">- ' + c.username + '</span>';
+                            html += '</label></div>';
+                        }
+                        listDiv.innerHTML = html;
+                    }
+
+                    function toggleExportSelectAll() {
+                        var checked = document.getElementById('exportSelectAll').checked;
+                        var checks = document.querySelectorAll('.export-cred-check');
+                        for (var i = 0; i < checks.length; i++) {
+                            checks[i].checked = checked;
+                        }
+                    }
+
+                    function updateExportSelectAll() {
+                        var checks = document.querySelectorAll('.export-cred-check');
+                        var allChecked = true;
+                        for (var i = 0; i < checks.length; i++) {
+                            if (!checks[i].checked) { allChecked = false; break; }
+                        }
+                        document.getElementById('exportSelectAll').checked = allChecked;
+                    }
+
+                    function getExportSelectedIds() {
+                        var checks = document.querySelectorAll('.export-cred-check:checked');
+                        var ids = [];
+                        for (var i = 0; i < checks.length; i++) {
+                            ids.push(checks[i].getAttribute('data-id'));
+                        }
+                        return ids;
                     }
 
                     function doExport() {
@@ -957,13 +1085,19 @@
                             showMessage(i18n.passwordMinLength, 'error');
                             return;
                         }
+                        var selectedIds = getExportSelectedIds();
+                        if (selectedIds.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
+                        var body = 'password=' + encodeURIComponent(password) + '&selectedIds=' + encodeURIComponent(selectedIds.join(','));
                         secureFetch(credentialsUrl + 'exportCredentials', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'password=' + encodeURIComponent(password)
+                            body: body
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
@@ -985,7 +1119,11 @@
                             showMessage(i18n.passwordMinLength, 'error');
                             return;
                         }
-                        // 使用隐藏表单提交实现文件下载
+                        var selectedIds = getExportSelectedIds();
+                        if (selectedIds.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
                         var form = document.createElement('form');
                         form.method = 'POST';
                         form.action = credentialsUrl + 'exportCredentialsFile';
@@ -997,7 +1135,12 @@
                         pwInput.value = password;
                         form.appendChild(pwInput);
 
-                        // Jenkins crumb
+                        var idsInput = document.createElement('input');
+                        idsInput.type = 'hidden';
+                        idsInput.name = 'selectedIds';
+                        idsInput.value = selectedIds.join(',');
+                        form.appendChild(idsInput);
+
                         var crumbInput = document.createElement('input');
                         crumbInput.type = 'hidden';
                         crumbInput.name = crumbHeaderName;
@@ -1011,16 +1154,24 @@
 
                     // ==================== 导入弹窗 ====================
 
+                    var importParsedData = null; // 存储解析后的凭据列表
+                    var importEncryptedData = ''; // 存储加密数据
+
                     function openImportDialog() {
                         document.getElementById('importPassword').value = '';
                         document.getElementById('importData').value = '';
-                        document.getElementById('importOverwrite').checked = false;
+                        var skipRadio = document.querySelector('input[name="importOverwriteMode"][value="skip"]');
+                        if (skipRadio) skipRadio.checked = true;
                         document.getElementById('importMethod').value = 'paste';
                         document.getElementById('import-paste-area').style.display = '';
                         document.getElementById('import-file-area').style.display = 'none';
                         if (document.getElementById('importFile')) {
                             document.getElementById('importFile').value = '';
                         }
+                        document.getElementById('import-step1').style.display = '';
+                        document.getElementById('import-step2').style.display = 'none';
+                        importParsedData = null;
+                        importEncryptedData = '';
                         document.getElementById('import-dialog').style.display = '';
                     }
 
@@ -1030,9 +1181,8 @@
                         document.getElementById('import-file-area').style.display = method === 'file' ? '' : 'none';
                     }
 
-                    function doImport() {
+                    function doParseImport() {
                         var password = document.getElementById('importPassword').value;
-                        var overwrite = document.getElementById('importOverwrite').checked;
                         var method = document.getElementById('importMethod').value;
 
                         if (!password) {
@@ -1041,7 +1191,6 @@
                         }
 
                         if (method === 'file') {
-                            // 从文件导入
                             var fileInput = document.getElementById('importFile');
                             if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
                                 showMessage(i18n.encryptedDataRequired, 'error');
@@ -1050,32 +1199,114 @@
                             var file = fileInput.files[0];
                             var reader = new FileReader();
                             reader.onload = function(e) {
-                                var fileContent = e.target.result;
-                                importCredentialsData(password, fileContent, overwrite);
+                                var fileContent = e.target.result.trim();
+                                parseImportData(password, fileContent);
                             };
                             reader.onerror = function() {
                                 showMessage('Failed to read file', 'error');
                             };
                             reader.readAsText(file);
                         } else {
-                            // 从粘贴内容导入
                             var data = document.getElementById('importData').value.trim();
                             if (!data) {
                                 showMessage(i18n.encryptedDataRequired, 'error');
                                 return;
                             }
-                            importCredentialsData(password, data, overwrite);
+                            parseImportData(password, data);
                         }
                     }
 
-                    function importCredentialsData(password, encryptedData, overwrite) {
+                    function parseImportData(password, encryptedData) {
+                        secureFetch(credentialsUrl + 'parseImportData', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            },
+                            body: 'password=' + encodeURIComponent(password) + '&data=' + encodeURIComponent(encryptedData)
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success) {
+                                importParsedData = data.credentials;
+                                importEncryptedData = data.encryptedData || encryptedData;
+                                renderImportCredentialList();
+                                document.getElementById('import-step1').style.display = 'none';
+                                document.getElementById('import-step2').style.display = '';
+                            } else {
+                                showMessage(data.message || i18n.importFailed, 'error');
+                            }
+                        })
+                        .catch(function(err) {
+                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
+                        });
+                    }
+
+                    function renderImportCredentialList() {
+                        var listDiv = document.getElementById('import-credential-list');
+                        if (!importParsedData || importParsedData.length === 0) {
+                            listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            return;
+                        }
+                        var html = '';
+                        for (var i = 0; i < importParsedData.length; i++) {
+                            var c = importParsedData[i];
+                            html += '<div style="padding:4px 0; border-bottom:1px solid #eee;">';
+                            html += '<label><input type="checkbox" class="import-cred-check" data-index="' + c.index + '" checked="checked" onchange="updateImportSelectAll()"/> ';
+                            html += '<strong>' + (c.description || c.id) + '</strong>';
+                            html += ' <span style="color:#666; font-size:0.85em;">[' + c.type + ']</span>';
+                            if (c.username) html += ' <span style="color:#666; font-size:0.85em;">- ' + c.username + '</span>';
+                            html += '</label></div>';
+                        }
+                        listDiv.innerHTML = html;
+                        document.getElementById('importSelectAll').checked = true;
+                    }
+
+                    function toggleImportSelectAll() {
+                        var checked = document.getElementById('importSelectAll').checked;
+                        var checks = document.querySelectorAll('.import-cred-check');
+                        for (var i = 0; i < checks.length; i++) {
+                            checks[i].checked = checked;
+                        }
+                    }
+
+                    function updateImportSelectAll() {
+                        var checks = document.querySelectorAll('.import-cred-check');
+                        var allChecked = true;
+                        for (var i = 0; i < checks.length; i++) {
+                            if (!checks[i].checked) { allChecked = false; break; }
+                        }
+                        document.getElementById('importSelectAll').checked = allChecked;
+                    }
+
+                    function doImportSelected() {
+                        var password = document.getElementById('importPassword').value;
+                        var overwriteRadio = document.querySelector('input[name="importOverwriteMode"]:checked');
+                        var overwrite = overwriteRadio ? overwriteRadio.value === 'overwrite' : false;
+
+                        var checks = document.querySelectorAll('.import-cred-check:checked');
+                        var selectedIndices = [];
+                        for (var i = 0; i < checks.length; i++) {
+                            selectedIndices.push(checks[i].getAttribute('data-index'));
+                        }
+
+                        if (selectedIndices.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
+
+                        var body = 'password=' + encodeURIComponent(password)
+                            + '&data=' + encodeURIComponent(importEncryptedData)
+                            + '&overwrite=' + overwrite
+                            + '&selectedIndices=' + encodeURIComponent(selectedIndices.join(','));
+
                         secureFetch(credentialsUrl + 'importCredentials', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'password=' + encodeURIComponent(password) + '&data=' + encodeURIComponent(encryptedData) + '&overwrite=' + overwrite
+                            body: body
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
@@ -1240,17 +1471,24 @@
 
                     // ==================== 全量导入ZIP ====================
 
+                    var zipImportParsedData = null;
+                    var zipImportBase64Data = '';
+
                     function openImportAllZipDialog() {
                         document.getElementById('importAllZipPassword').value = '';
                         document.getElementById('importAllZipFile').value = '';
-                        document.getElementById('importAllZipOverwrite').checked = false;
+                        var skipRadio = document.querySelector('input[name="zipOverwriteMode"][value="skip"]');
+                        if (skipRadio) skipRadio.checked = true;
+                        document.getElementById('import-zip-step1').style.display = '';
+                        document.getElementById('import-zip-step2').style.display = 'none';
+                        zipImportParsedData = null;
+                        zipImportBase64Data = '';
                         document.getElementById('import-all-zip-dialog').style.display = '';
                     }
 
-                    function doImportAllZip() {
+                    function doParseZip() {
                         var password = document.getElementById('importAllZipPassword').value.trim();
                         var fileInput = document.getElementById('importAllZipFile');
-                        var overwrite = document.getElementById('importAllZipOverwrite').checked;
 
                         if (!password) {
                             showMessage(i18n.passwordRequired, 'error');
@@ -1263,12 +1501,11 @@
 
                         var reader = new FileReader();
                         reader.onload = function(e) {
-                            var base64Data = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                            zipImportBase64Data = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
                             var body = 'password=' + encodeURIComponent(password)
-                                + '&data=' + encodeURIComponent(base64Data)
-                                + '&overwrite=' + overwrite;
+                                + '&data=' + encodeURIComponent(zipImportBase64Data);
 
-                            secureFetch(credentialsUrl + 'importAllFromZip', {
+                            secureFetch(credentialsUrl + 'parseZipData', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/x-www-form-urlencoded',
@@ -1279,9 +1516,10 @@
                             .then(function(response) { return response.json(); })
                             .then(function(data) {
                                 if (data.success) {
-                                    closeDialog('import-all-zip-dialog');
-                                    showMessage(data.message, 'success');
-                                    loadCredentials();
+                                    zipImportParsedData = data.credentials;
+                                    renderZipImportCredentialList();
+                                    document.getElementById('import-zip-step1').style.display = 'none';
+                                    document.getElementById('import-zip-step2').style.display = '';
                                 } else {
                                     showMessage(data.message || i18n.importFailed, 'error');
                                 }
@@ -1291,6 +1529,92 @@
                             });
                         };
                         reader.readAsArrayBuffer(fileInput.files[0]);
+                    }
+
+                    function renderZipImportCredentialList() {
+                        var listDiv = document.getElementById('import-zip-credential-list');
+                        if (!zipImportParsedData || zipImportParsedData.length === 0) {
+                            listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            return;
+                        }
+                        var html = '';
+                        for (var i = 0; i < zipImportParsedData.length; i++) {
+                            var c = zipImportParsedData[i];
+                            html += '<div style="padding:4px 0; border-bottom:1px solid #eee;">';
+                            html += '<label><input type="checkbox" class="import-zip-cred-check" data-entry="' + c.folderEntry + '" data-index="' + c.index + '" checked="checked" onchange="updateImportZipSelectAll()"/> ';
+                            if (c.folderName && c.folderName !== 'system') {
+                                html += '<span style="color:#4a6; font-size:0.85em;">[' + c.folderName + ']</span> ';
+                            } else if (c.folderName === 'system') {
+                                html += '<span style="color:#66a; font-size:0.85em;">[system]</span> ';
+                            }
+                            html += '<strong>' + (c.description || c.id) + '</strong>';
+                            html += ' <span style="color:#666; font-size:0.85em;">[' + c.type + ']</span>';
+                            if (c.username) html += ' <span style="color:#666; font-size:0.85em;">- ' + c.username + '</span>';
+                            html += '</label></div>';
+                        }
+                        listDiv.innerHTML = html;
+                        document.getElementById('importZipSelectAll').checked = true;
+                    }
+
+                    function toggleImportZipSelectAll() {
+                        var checked = document.getElementById('importZipSelectAll').checked;
+                        var checks = document.querySelectorAll('.import-zip-cred-check');
+                        for (var i = 0; i < checks.length; i++) {
+                            checks[i].checked = checked;
+                        }
+                    }
+
+                    function updateImportZipSelectAll() {
+                        var checks = document.querySelectorAll('.import-zip-cred-check');
+                        var allChecked = true;
+                        for (var i = 0; i < checks.length; i++) {
+                            if (!checks[i].checked) { allChecked = false; break; }
+                        }
+                        document.getElementById('importZipSelectAll').checked = allChecked;
+                    }
+
+                    function doImportAllZipSelected() {
+                        var password = document.getElementById('importAllZipPassword').value.trim();
+                        var overwriteRadio = document.querySelector('input[name="zipOverwriteMode"]:checked');
+                        var overwrite = overwriteRadio ? overwriteRadio.value === 'overwrite' : false;
+
+                        var checks = document.querySelectorAll('.import-zip-cred-check:checked');
+                        var selectedEntries = [];
+                        for (var i = 0; i < checks.length; i++) {
+                            selectedEntries.push(checks[i].getAttribute('data-entry') + ':' + checks[i].getAttribute('data-index'));
+                        }
+
+                        if (selectedEntries.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
+
+                        var body = 'password=' + encodeURIComponent(password)
+                            + '&data=' + encodeURIComponent(zipImportBase64Data)
+                            + '&overwrite=' + overwrite
+                            + '&selectedEntries=' + encodeURIComponent(selectedEntries.join(','));
+
+                        secureFetch(credentialsUrl + 'importAllFromZip', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            },
+                            body: body
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success) {
+                                closeDialog('import-all-zip-dialog');
+                                showMessage(data.message, 'success');
+                                setTimeout(function() { window.location.reload(); }, 2000);
+                            } else {
+                                showMessage(data.message || i18n.importFailed, 'error');
+                            }
+                        })
+                        .catch(function(err) {
+                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
+                        });
                     }
                 //]]>
                 </script>

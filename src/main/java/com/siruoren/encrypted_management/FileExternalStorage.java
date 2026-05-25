@@ -23,7 +23,7 @@ import java.util.Base64;
 /**
  * 基于文件的外部存储实现
  * 凭据存储在自定义目录下，与Jenkins Job配置完全解耦
- * 每个目录任务的所有凭据保存为一个JSON文件，系统级凭据使用jenkins_root.json
+ * 每个目录任务的所有凭据保存为一个加密文件，文件名为任务名.enc，系统级凭据使用jenkins_root.enc
  * 支持AES-256-GCM加密存储
  *
  * 并发优化：
@@ -86,18 +86,21 @@ public class FileExternalStorage implements ExternalStorage {
 
     /**
      * 根据文件夹名获取凭据文件
-     * 系统级凭据使用 jenkins_root.json（存储根目录下）
-     * 目录任务使用目录全名作为子目录层级，凭据文件为 credentials.json
-     * 例如: folderName="dev/team" → storageDir/dev/team/credentials.json
+     * 系统级凭据使用 jenkins_root.enc（存储根目录下）
+     * 目录任务使用目录全名作为子目录层级，文件名为任务名.enc
+     * 例如: folderName="test" → storageDir/test/test.enc
+     *       folderName="dev/team" → storageDir/dev/team/team.enc
      */
     private File getCredFile(String folderName) {
         File currentStorageDir = storageDir; // 快照读取
         if (folderName == null || folderName.isEmpty() || "system".equals(folderName)) {
-            return new File(currentStorageDir, "jenkins_root.json");
+            return new File(currentStorageDir, "jenkins_root.enc");
         }
-        // 按目录层级创建子目录
+        // 所有目录任务都放在 fullName 路径的子目录下，文件名为任务名.enc
+        int lastSlash = folderName.lastIndexOf('/');
+        String taskName = lastSlash > 0 ? folderName.substring(lastSlash + 1) : folderName;
         File subDir = new File(currentStorageDir, folderName);
-        return new File(subDir, "credentials.json");
+        return new File(subDir, taskName + ".enc");
     }
 
     @Override
@@ -225,31 +228,35 @@ public class FileExternalStorage implements ExternalStorage {
 
         List<String> folders = new ArrayList<>();
         // 检查系统级凭据
-        if (new File(currentStorageDir, "jenkins_root.json").exists()) {
+        if (new File(currentStorageDir, "jenkins_root.enc").exists()) {
             folders.add("system");
         }
-        // 递归查找所有包含 credentials.json 的子目录
+        // 递归查找所有 .enc 文件
         listFoldersRecursive(currentStorageDir, currentStorageDir, folders);
         return folders;
     }
 
     /**
-     * 递归查找包含 credentials.json 的子目录，计算相对路径作为 folderName
+     * 递归查找所有 .enc 文件，计算相对路径作为 folderName
+     * 新路径格式: storageDir/test/test.enc → folderName="test"
+     *            storageDir/dev/team/team.enc → folderName="dev/team"
+     * 即 .enc 文件所在目录的相对路径就是 folderName
      */
     private void listFoldersRecursive(File baseDir, File currentDir, List<String> folders) {
         File[] children = currentDir.listFiles();
         if (children == null) return;
         for (File child : children) {
             if (child.isDirectory()) {
-                File credFile = new File(child, "credentials.json");
-                if (credFile.exists()) {
-                    String relativePath = baseDir.toPath().relativize(child.toPath()).toString();
-                    // 统一使用 / 作为分隔符
-                    relativePath = relativePath.replace(File.separatorChar, '/');
+                listFoldersRecursive(baseDir, child, folders);
+            } else if (child.getName().endsWith(".enc") && !"jenkins_root.enc".equals(child.getName())) {
+                // .enc 文件所在目录的相对路径就是 folderName
+                File parentDir = child.getParentFile();
+                String relativePath = baseDir.toPath().relativize(parentDir.toPath()).toString();
+                // 统一使用 / 作为分隔符
+                relativePath = relativePath.replace(File.separatorChar, '/');
+                if (!relativePath.isEmpty()) {
                     folders.add(relativePath);
                 }
-                // 继续递归查找子目录
-                listFoldersRecursive(baseDir, child, folders);
             }
         }
     }

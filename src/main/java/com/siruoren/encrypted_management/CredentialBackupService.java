@@ -50,11 +50,27 @@ public class CredentialBackupService {
      * @return 加密后的Base64字符串
      */
     public static String exportCredentials(ItemGroup<?> itemGroup, String encryptionPassword) throws Exception {
+        return exportCredentials(itemGroup, encryptionPassword, null);
+    }
+
+    /**
+     * 导出指定凭据ID的凭据为加密JSON
+     * @param itemGroup 文件夹
+     * @param encryptionPassword 加密密码
+     * @param selectedIds 选中的凭据ID列表，为null时导出全部
+     * @return 加密后的Base64字符串
+     */
+    public static String exportCredentials(ItemGroup<?> itemGroup, String encryptionPassword, java.util.Set<String> selectedIds) throws Exception {
         // 收集当前存储自身的凭据（不包含从父级继承的凭据）
         JSONArray credentialsArray = new JSONArray();
         List<StandardCredentials> creds = getStoreCredentials(itemGroup);
 
         for (StandardCredentials c : creds) {
+            // 如果指定了选中ID列表，则只导出选中的凭据
+            if (selectedIds != null && !selectedIds.contains(c.getId())) {
+                continue;
+            }
+
             JSONObject credObj = new JSONObject();
             credObj.put("id", c.getId());
             credObj.put("description", c.getDescription());
@@ -106,10 +122,21 @@ public class CredentialBackupService {
      */
     public static JSONObject importCredentials(ItemGroup<?> itemGroup, String encryptedData,
                                                 String encryptionPassword, boolean overwrite) throws Exception {
+        return importCredentials(itemGroup, encryptedData, encryptionPassword, overwrite, null);
+    }
+
+    public static JSONObject importCredentials(ItemGroup<?> itemGroup, String encryptedData,
+                                                String encryptionPassword, boolean overwrite,
+                                                java.util.Set<Integer> selectedIndices) throws Exception {
         // 解密
         String plainJson = decrypt(encryptedData, encryptionPassword);
         JSONObject importObj = JSONObject.fromObject(plainJson);
-        return importCredentialsFromJson(itemGroup, importObj, overwrite);
+        return importCredentialsFromJson(itemGroup, importObj, overwrite, selectedIndices);
+    }
+
+    public static JSONObject importCredentialsFromJson(ItemGroup<?> itemGroup, JSONObject importObj,
+                                                       boolean overwrite) throws Exception {
+        return importCredentialsFromJson(itemGroup, importObj, overwrite, null);
     }
 
     /**
@@ -118,10 +145,11 @@ public class CredentialBackupService {
      * @param itemGroup 目标ItemGroup
      * @param importObj 已解密的JSON对象（包含credentials数组）
      * @param overwrite 是否覆盖已存在的凭据
+     * @param selectedIndices 选中的凭据索引集合，为null时导入全部
      * @return 导入结果
      */
     public static JSONObject importCredentialsFromJson(ItemGroup<?> itemGroup, JSONObject importObj,
-                                                       boolean overwrite) throws Exception {
+                                                       boolean overwrite, java.util.Set<Integer> selectedIndices) throws Exception {
         JSONArray credentialsArray = importObj.getJSONArray("credentials");
         String sourceFolder = importObj.optString("folder", "unknown");
 
@@ -143,6 +171,10 @@ public class CredentialBackupService {
         int failed = 0;
 
         for (int i = 0; i < credentialsArray.size(); i++) {
+            // 如果指定了选中索引集合，则只导入选中的凭据
+            if (selectedIndices != null && !selectedIndices.contains(i)) {
+                continue;
+            }
             JSONObject credObj = credentialsArray.getJSONObject(i);
             try {
                 String type = credObj.getString("type");

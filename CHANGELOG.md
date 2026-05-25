@@ -2,6 +2,21 @@
 
 All notable changes to the Encrypted Management plugin will be documented in this file.
 
+## [1.0.1-SNAPSHOT] - UNRELEASED
+
+### Added
+
+- **凭据选择导出/导入**：导出凭据弹窗支持选择要导出的凭据（默认不选择），导入凭据弹窗分为两步：先解析数据展示凭据列表（默认全选），再选择要导入的凭据。支持按凭据 ID 筛选导出、按凭据索引筛选导入
+
+- **外部存储路径优化**：额外存储按目录任务 `fullName` 路径创建子目录，文件名为任务名 + `.enc`，与 Jenkins 目录层级结构保持一致
+  - 系统凭据：`jenkins_root.enc`
+  - 顶级目录任务 `test`：`test/test.enc`
+  - 多级目录任务 `dev/team`：`dev/team/team.enc`
+
+- **ZIP 导入流程优化**：全量导入 ZIP 弹窗分为两步：先解析 ZIP 展示所有凭据（按目录分组，默认全选），再选择要导入的凭据；冲突处理从复选框改为单选按钮，支持"跳过已存在的凭据"（默认）和"强制覆盖已存在的凭据"
+
+- **文件夹凭据管理凭据选择**：目录任务下的凭据导出/导入弹窗同样支持凭据选择和两步导入流程
+
 ## [1.0.1] - 2026-05-25
 
 ### Added
