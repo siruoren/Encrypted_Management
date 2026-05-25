@@ -49,3 +49,15 @@ All notable changes to the Encrypted Management plugin will be documented in thi
   - 文件存储：per-credential 细粒度 ReentrantLock，避免全局锁阻塞
   - 同步操作：异步非阻塞执行，有限线程池（CPU 核心数），守护线程防内存泄露
   - volatile 保证共享变量可见性
+
+- **Swagger 风格 API 文档**
+  - 独立 API 文档页面，Swagger 标准布局和配色
+  - 按模块分组展示：凭证管理、审计日志、备份恢复、外部存储
+  - 每个端点显示方法、路径、参数表、响应示例
+  - Schema 模型展示区，定义 ApiResponse、Credential、ImportResult、StorageStatus 数据结构
+  - "Try it" 在线测试功能，支持参数输入、实时调用 API 并展示 JSON 响应
+  - 自动生成带 Jenkins Crumb 的 Curl 命令，方便命令行调试
+  - 文件上传支持（FileReader 读取文件内容到文本框）
+  - 文件下载支持（表单提交触发浏览器下载）
+  - 主页面右上角 API 文档跳转按钮
+  - API 文档页面中英文国际化支持

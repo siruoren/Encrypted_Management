@@ -53,7 +53,7 @@
                     <div class="jenkins-form-item">
                         <div class="jenkins-form-label">${%ID}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="credId" class="jenkins-input" placeholder="${%Optional - leave empty for auto-generated}"/>
+                            <input type="text" id="credId" class="jenkins-input" placeholder="${%Optional - leave blank for auto-generation}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
@@ -134,7 +134,7 @@
                         <div class="jenkins-form-item">
                             <div class="jenkins-form-label">${%Secret}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%Leave empty to keep current value}"/>
+                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
                             </div>
                         </div>
                     </div>
@@ -148,7 +148,7 @@
                         <div class="jenkins-form-item">
                             <div class="jenkins-form-label">${%Password}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%Leave empty to keep current value}"/>
+                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
                             </div>
                         </div>
                     </div>
@@ -162,13 +162,13 @@
                         <div class="jenkins-form-item">
                             <div class="jenkins-form-label">${%Passphrase}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%Leave empty to keep current value}"/>
+                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
                             <div class="jenkins-form-label">${%Private Key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%Leave empty to keep current value}"></textarea>
+                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%Leave blank to keep current value}"></textarea>
                                 <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPairForUpdate()">${%Generate Key Pair}</button>
                             </div>
                         </div>
@@ -315,7 +315,7 @@
                             <div class="jenkins-form-item">
                                 <div class="jenkins-form-label">${%Storage Path}</div>
                                 <div class="jenkins-form-control">
-                                    <input type="text" id="storagePath" class="jenkins-input" placeholder="${%Leave empty for default path}"/>
+                                    <input type="text" id="storagePath" class="jenkins-input" placeholder="${%Leave blank for default path}"/>
                                 </div>
                             </div>
                             <div class="jenkins-form-item">
@@ -349,7 +349,7 @@
                         update: "${%Update}",
                         decryptionFailed: "${%Decryption failed}",
                         requestFailed: "${%Request failed}",
-                        permissionDenied: "${%Permission denied. You do not have access to manage credentials for this folder.}",
+                        permissionDenied: "${%Permission denied. You lack access to manage credentials for this folder.}",
                         secretRequired: "${%Secret value is required}",
                         usernameRequired: "${%Username is required}",
                         passwordRequired: "${%Password is required}",
@@ -1156,7 +1156,7 @@
             </st:once>
                 </j:when>
                 <j:otherwise>
-                    <div class="jenkins-alert jenkins-alert-warning">${%Permission denied. You do not have access to manage credentials for this folder.}</div>
+                    <div class="jenkins-alert jenkins-alert-warning">${%Permission denied. You lack access to manage credentials for this folder.}</div>
                 </j:otherwise>
             </j:choose>
         </l:main-panel>
