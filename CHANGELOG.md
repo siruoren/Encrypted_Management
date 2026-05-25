@@ -48,7 +48,7 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 - **并发优化**
   - 审计日志：单线程 Executor 异步写入，不阻塞调用线程
   - 外部存储管理器：ReadWriteLock 保护配置原子性变更
-  - 文件存储：per-credential 细粒度 ReentrantLock，避免全局锁阻塞
+  - 文件存储：per-folder 细粒度 ReentrantLock，避免全局锁阻塞
   - 同步操作：异步非阻塞执行，有限线程池（CPU 核心数），守护线程防内存泄露
   - volatile 保证共享变量可见性
 
@@ -70,3 +70,13 @@ All notable changes to the Encrypted Management plugin will be documented in thi
   - 仅管理员（ADMINISTER 权限）可见和操作
   - 独立的 Swagger API 文档页面
   - 中英文国际化支持
+
+### Fixed
+
+- 移除未使用的依赖（structs、jsch），优化项目依赖结构
+
+### Tests
+
+- 添加单元测试（25个测试用例）
+  - CredentialBackupServiceTest：AES-256-GCM 加密解密测试、JSON 数据结构测试、特殊字符/中文字符/长文本加密测试
+  - FileExternalStorageTest：连接测试、保存/加载凭据测试、系统级凭据文件命名测试、路径清理安全测试、强制加密密码测试
