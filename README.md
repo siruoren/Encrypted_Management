@@ -64,3 +64,8 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 - **解密 SSH 凭据时显示公钥**
 - **权限控制**（仅 Configure 权限用户可操作）
 - **国际化**（中英文）
+
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/chart?repos=siruoren/encrypted_managaement&type=date&legend=top-left)](https://www.star-history.com/?repos=siruoren%2Fencrypted_managaement&type=date&legend=top-left)
