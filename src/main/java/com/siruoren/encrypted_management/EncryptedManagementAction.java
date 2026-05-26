@@ -477,7 +477,7 @@ public class EncryptedManagementAction implements Action {
             LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair", e);
             JSONObject err = new JSONObject();
             err.put("success", false);
-            err.put("message", "Failed to generate key pair: " + e.getMessage());
+            err.put("message", "Failed to generate key pair. Check server logs for details.");
             return new HttpResponse() {
                 @Override
                 public void generateResponse(StaplerRequest req, StaplerResponse rsp, Object node) throws IOException {
@@ -634,61 +634,6 @@ public class EncryptedManagementAction implements Action {
         return jsonResult(result);
     }
 
-    // ==================== 审计日志 API ====================
-
-    /**
-     * API: 查询审计日志
-     */
-    @RequirePOST
-    public HttpResponse doAuditLog(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
-
-        int limit = 100;
-        String limitParam = req.getParameter("limit");
-        if (limitParam != null && !limitParam.isEmpty()) {
-            try {
-                limit = Math.min(Integer.parseInt(limitParam), 1000);
-            } catch (NumberFormatException ignored) {}
-        }
-
-        java.util.List<String> logs = AuditLogger.readRecentLogs(limit);
-        JSONArray logArray = new JSONArray();
-        for (String line : logs) {
-            logArray.add(line);
-        }
-
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("logs", logArray);
-        result.put("count", logs.size());
-        result.put("maxRetentionDays", AuditLogger.getMaxLogFiles());
-        return jsonResult(result);
-    }
-
-    /**
-     * API: 配置审计日志保留天数
-     */
-    @RequirePOST
-    public HttpResponse doConfigureAuditLog(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
-
-        String daysParam = req.getParameter("maxRetentionDays");
-        if (daysParam != null && !daysParam.isEmpty()) {
-            try {
-                int days = Integer.parseInt(daysParam);
-                if (days < 1) {
-                    return errorResponse("Retention days must be at least 1");
-                }
-                AuditLogger.setMaxLogFiles(days);
-                AuditLogger.log(folder.getFullName(), "CONFIGURE_AUDIT", "*", "*", "maxRetentionDays=" + days);
-                return successResponse("Audit log retention set to " + days + " days");
-            } catch (NumberFormatException e) {
-                return errorResponse("Invalid retention days value");
-            }
-        }
-        return errorResponse("Missing maxRetentionDays parameter");
-    }
-
     // ==================== 备份/导出/导入 API ====================
 
     /**
@@ -726,12 +671,12 @@ public class EncryptedManagementAction implements Action {
             return jsonResult(result);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to export credentials", e);
-            return errorResponse("Failed to export credentials: " + e.getMessage());
+            return errorResponse("Failed to export credentials. Check server logs for details.");
         }
     }
 
     /**
-     * API: 导出凭据为加密文件下载
+     * API: 导出凭据为文件下载
      */
     @RequirePOST
     public HttpResponse doExportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -771,7 +716,7 @@ public class EncryptedManagementAction implements Action {
             };
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to export credentials as file", e);
-            return errorResponse("Failed to export credentials: " + e.getMessage());
+            return errorResponse("Failed to export credentials. Check server logs for details.");
         }
     }
 
@@ -802,12 +747,12 @@ public class EncryptedManagementAction implements Action {
                     JSONObject cred = credentials.getJSONObject(i);
                     JSONObject preview = new JSONObject();
                     preview.put("index", i);
-                    preview.put("id", cred.optString("id", ""));
-                    preview.put("description", cred.optString("description", ""));
+                    preview.put("id", CredentialService.escapeHtml(cred.optString("id", "")));
+                    preview.put("description", CredentialService.escapeHtml(cred.optString("description", "")));
                     preview.put("type", cred.optString("type", ""));
                     preview.put("scope", cred.optString("scope", ""));
                     if (cred.has("username")) {
-                        preview.put("username", cred.getString("username"));
+                        preview.put("username", CredentialService.escapeHtml(cred.getString("username")));
                     }
                     previewList.add(preview);
                 }
@@ -822,7 +767,7 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Decryption failed: wrong password or corrupted data");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to parse import data", e);
-            return errorResponse("Failed to parse data: " + e.getMessage());
+            return errorResponse("Failed to parse import data. Check server logs for details.");
         }
     }
 
@@ -861,7 +806,7 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Decryption failed: wrong password or corrupted data");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import credentials", e);
-            return errorResponse("Failed to import credentials: " + e.getMessage());
+            return errorResponse("Failed to import credentials. Check server logs for details.");
         }
     }
 
@@ -898,7 +843,7 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Decryption failed: wrong password or corrupted data");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import credentials from file", e);
-            return errorResponse("Failed to import credentials: " + e.getMessage());
+            return errorResponse("Failed to import credentials. Check server logs for details.");
         }
     }
 

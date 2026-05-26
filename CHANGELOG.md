@@ -22,6 +22,16 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 
 - **外部存储功能精简**：移除目录任务（Folder）级别的外部存储功能，仅保留系统凭据管理（Jenkins 根目录）下的外部存储功能，减少凭据扩散风险，降低攻击面
 
+- **审计日志功能精简**：移除目录任务下的审计日志查看和配置功能，仅保留系统凭据管理下的审计日志功能，审计日志条目按时间倒序排列
+
+- **审计日志持久化**：审计日志写入线程改为非 daemon 线程，注册 JVM shutdown hook 确保关闭时不丢失日志
+
+- **加密代码去重**：将 `CredentialBackupService` 和 `FileExternalStorage` 中重复的 AES-256-GCM 加密/解密/PBKDF2 密钥派生代码提取到 `CryptoService` 统一管理
+
+- **异常信息脱敏**：所有通用异常捕获不再向前端返回 `e.getMessage()`，改为返回通用错误提示，详细信息仅记录在服务端日志
+
+- **XSS 防护完善**：所有返回前端的用户可控字段（id、description、username 等）统一调用 `CredentialService.escapeHtml()` 进行转义
+
 ### Security
 
 - **权限模型增强**：解密、导出、同步等敏感操作升级为 `Jenkins.ADMINISTER` 权限，防止低权限用户获取明文凭据

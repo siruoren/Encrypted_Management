@@ -14,17 +14,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
-import java.security.SecureRandom;
-import java.util.Base64;
-
 /**
  * 基于文件的外部存储实现
  * 凭据存储在自定义目录下，与Jenkins Job配置完全解耦
  * 每个目录任务的所有凭据保存为一个加密文件，文件名为任务名.enc，系统级凭据使用jenkins_root.enc
- * 支持AES-256-GCM加密存储
+ * 加密/解密由CryptoService统一提供
  *
  * 并发优化：
  * - 使用per-folder细粒度锁，避免全局锁阻塞
@@ -33,10 +27,6 @@ import java.util.Base64;
  */
 public class FileExternalStorage implements ExternalStorage {
     private static final Logger LOGGER = Logger.getLogger(FileExternalStorage.class.getName());
-    private static final String ALGORITHM = "AES/GCM/NoPadding";
-    private static final int GCM_TAG_LENGTH = 128;
-    private static final int GCM_IV_LENGTH = 12;
-    private static final int AES_KEY_LENGTH = 256;
 
     private volatile File storageDir;
     private volatile String encryptionPassword;
@@ -129,7 +119,7 @@ public class FileExternalStorage implements ExternalStorage {
                 throw new IOException("Encryption password is required for external storage");
             }
             try {
-                dataToWrite = encrypt(allCredentialsData.toString(), currentPassword);
+                dataToWrite = CryptoService.aesEncrypt(allCredentialsData.toString(), currentPassword);
             } catch (Exception e) {
                 throw new IOException("Failed to encrypt credential data", e);
             }
@@ -178,7 +168,7 @@ public class FileExternalStorage implements ExternalStorage {
                 throw new IOException("Encryption password is required for external storage");
             }
             try {
-                content = decrypt(content, currentPassword);
+                content = CryptoService.aesDecrypt(content, currentPassword);
             } catch (Exception e) {
                 throw new IOException("Failed to decrypt credential data", e);
             }
@@ -270,67 +260,6 @@ public class FileExternalStorage implements ExternalStorage {
         info.put("writable", currentStorageDir.canWrite());
         info.put("encrypted", encryptionPassword != null && !encryptionPassword.isEmpty());
         return info;
-    }
-
-    /**
-     * AES-256-GCM加密
-     */
-    private static String encrypt(String plaintext, String password) throws Exception {
-        byte[] salt = new byte[16];
-        new SecureRandom().nextBytes(salt);
-
-        javax.crypto.SecretKey key = deriveKey(password, salt);
-
-        byte[] iv = new byte[GCM_IV_LENGTH];
-        new SecureRandom().nextBytes(iv);
-
-        Cipher cipher = Cipher.getInstance(ALGORITHM);
-        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.ENCRYPT_MODE, key, gcmSpec);
-        byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
-
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        bos.write(salt);
-        bos.write(iv);
-        bos.write(ciphertext);
-
-        return Base64.getEncoder().encodeToString(bos.toByteArray());
-    }
-
-    /**
-     * AES-256-GCM解密
-     */
-    private static String decrypt(String encryptedBase64, String password) throws Exception {
-        byte[] data = Base64.getDecoder().decode(encryptedBase64);
-
-        byte[] salt = new byte[16];
-        byte[] iv = new byte[GCM_IV_LENGTH];
-        System.arraycopy(data, 0, salt, 0, 16);
-        System.arraycopy(data, 16, iv, 0, GCM_IV_LENGTH);
-
-        int ciphertextLength = data.length - 16 - GCM_IV_LENGTH;
-        byte[] ciphertext = new byte[ciphertextLength];
-        System.arraycopy(data, 16 + GCM_IV_LENGTH, ciphertext, 0, ciphertextLength);
-
-        javax.crypto.SecretKey key = deriveKey(password, salt);
-
-        Cipher cipher = Cipher.getInstance(ALGORITHM);
-        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.DECRYPT_MODE, key, gcmSpec);
-        byte[] plaintext = cipher.doFinal(ciphertext);
-
-        return new String(plaintext, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * PBKDF2从密码派生AES-256密钥
-     */
-    private static javax.crypto.SecretKey deriveKey(String password, byte[] salt) throws Exception {
-        javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
-                password.toCharArray(), salt, 65536, AES_KEY_LENGTH);
-        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
-        return new SecretKeySpec(keyBytes, "AES");
     }
 
 }

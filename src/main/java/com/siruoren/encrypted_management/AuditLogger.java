@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -41,14 +42,22 @@ public class AuditLogger {
     private static volatile int maxLogFiles = 30; // 保留30天日志（可配置）
 
     // 单线程日志写入器，保证顺序写入、防阻塞、防并发冲突
+    // 非daemon线程，确保JVM关闭前日志写入完成
     private static final ExecutorService logWriter = Executors.newSingleThreadExecutor(new ThreadFactory() {
         @Override
         public Thread newThread(Runnable r) {
             Thread t = new Thread(r, "EncryptedManagement-AuditLogger");
-            t.setDaemon(true); // 守护线程，JVM关闭时自动退出
+            t.setDaemon(false); // 非守护线程，JVM关闭时等待日志写入完成
             return t;
         }
     });
+
+    // 注册JVM关闭钩子，确保审计日志不丢失
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            shutdown();
+        }, "EncryptedManagement-AuditLogger-ShutdownHook"));
+    }
 
     private AuditLogger() {}
 
@@ -219,14 +228,16 @@ public class AuditLogger {
             return Collections.emptyList();
         }
 
-        // 按文件名倒序排列（最新的在前）
+        // 按文件名倒序排列（最新的文件在前）
         List<File> sortedFiles = new ArrayList<>();
         Collections.addAll(sortedFiles, logFiles);
         sortedFiles.sort((a, b) -> b.getName().compareTo(a.getName()));
 
+        // 每个文件内行也倒序，保证整体时间倒序（最新的条目在前）
         for (File f : sortedFiles) {
             try {
                 List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
+                Collections.reverse(lines);
                 allLines.addAll(lines);
             } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "Failed to read audit log file: " + f.getAbsolutePath(), e);
@@ -234,8 +245,7 @@ public class AuditLogger {
             if (allLines.size() >= limit * 2) break; // 多读一些，后面截断
         }
 
-        // 倒序（最新的在前），取limit条
-        Collections.reverse(allLines);
+        // allLines 已经是时间倒序，直接取limit条
         if (allLines.size() > limit) {
             allLines = allLines.subList(0, limit);
         }

@@ -424,7 +424,7 @@ public class SystemCredentialsAction implements RootAction {
             return jsonResult(result);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to export system credentials", e);
-            return errorResponse("Failed to export credentials: " + e.getMessage());
+            return errorResponse("Failed to export credentials. Check server logs for details.");
         }
     }
 
@@ -465,7 +465,7 @@ public class SystemCredentialsAction implements RootAction {
             };
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to export system credentials as file", e);
-            return errorResponse("Failed to export credentials: " + e.getMessage());
+            return errorResponse("Failed to export credentials. Check server logs for details.");
         }
     }
 
@@ -501,7 +501,7 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Decryption failed: wrong password or corrupted data");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import system credentials", e);
-            return errorResponse("Failed to import credentials: " + e.getMessage());
+            return errorResponse("Failed to import credentials. Check server logs for details.");
         }
     }
 
@@ -535,12 +535,12 @@ public class SystemCredentialsAction implements RootAction {
                     JSONObject cred = credentials.getJSONObject(i);
                     JSONObject preview = new JSONObject();
                     preview.put("index", i);
-                    preview.put("id", cred.optString("id", ""));
-                    preview.put("description", cred.optString("description", ""));
+                    preview.put("id", CredentialService.escapeHtml(cred.optString("id", "")));
+                    preview.put("description", CredentialService.escapeHtml(cred.optString("description", "")));
                     preview.put("type", cred.optString("type", ""));
                     preview.put("scope", cred.optString("scope", ""));
                     if (cred.has("username")) {
-                        preview.put("username", cred.getString("username"));
+                        preview.put("username", CredentialService.escapeHtml(cred.getString("username")));
                     }
                     previewList.add(preview);
                 }
@@ -558,7 +558,7 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Decryption failed: wrong password or corrupted data");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to parse import data", e);
-            return errorResponse("Failed to parse data: " + e.getMessage());
+            return errorResponse("Failed to parse import data. Check server logs for details.");
         }
     }
 
@@ -592,7 +592,7 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Decryption failed: wrong password or corrupted data");
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import system credentials from file", e);
-            return errorResponse("Failed to import credentials: " + e.getMessage());
+            return errorResponse("Failed to import credentials. Check server logs for details.");
         }
     }
 
@@ -616,7 +616,7 @@ public class SystemCredentialsAction implements RootAction {
             return jsonResult(result);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import system credentials from external storage", e);
-            return errorResponse("Failed to import credentials from external storage: " + e.getMessage());
+            return errorResponse("Failed to import credentials from external storage. Check server logs for details.");
         }
     }
 
@@ -671,7 +671,6 @@ public class SystemCredentialsAction implements RootAction {
         }
 
         String detail = "enabled=" + enabled + ", syncMode=" + syncModeStr
-                + ", path=" + storagePath
                 + ", encrypted=" + (encryptionPassword != null && !encryptionPassword.isEmpty());
         AuditLogger.log("system", "CONFIGURE_STORAGE", "*", "*", detail);
         return successResponse("External storage configuration saved");
@@ -832,7 +831,7 @@ public class SystemCredentialsAction implements RootAction {
             };
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to export all credentials as ZIP", e);
-            return errorResponse("Failed to export credentials: " + e.getMessage());
+            return errorResponse("Failed to export credentials. Check server logs for details.");
         }
     }
 
@@ -908,14 +907,14 @@ public class SystemCredentialsAction implements RootAction {
                                 JSONObject cred = credentials.getJSONObject(i);
                                 JSONObject preview = new JSONObject();
                                 preview.put("folderEntry", entryPath);
-                                preview.put("folderName", folderName);
+                                preview.put("folderName", CredentialService.escapeHtml(folderName));
                                 preview.put("index", i);
-                                preview.put("id", cred.optString("id", ""));
-                                preview.put("description", cred.optString("description", ""));
+                                preview.put("id", CredentialService.escapeHtml(cred.optString("id", "")));
+                                preview.put("description", CredentialService.escapeHtml(cred.optString("description", "")));
                                 preview.put("type", cred.optString("type", ""));
                                 preview.put("scope", cred.optString("scope", ""));
                                 if (cred.has("username")) {
-                                    preview.put("username", cred.getString("username"));
+                                    preview.put("username", CredentialService.escapeHtml(cred.getString("username")));
                                 }
                                 allPreview.add(preview);
                             }
@@ -937,7 +936,7 @@ public class SystemCredentialsAction implements RootAction {
                 return errorResponse("Decryption failed: wrong password or corrupted data");
             }
             LOGGER.log(Level.SEVERE, "Failed to parse ZIP data", e);
-            return errorResponse("Failed to parse data: " + e.getMessage());
+            return errorResponse("Failed to parse import data. Check server logs for details.");
         }
     }
 
@@ -976,7 +975,7 @@ public class SystemCredentialsAction implements RootAction {
                 return errorResponse("Decryption failed: wrong password or corrupted data");
             }
             LOGGER.log(Level.SEVERE, "Failed to import credentials from ZIP", e);
-            return errorResponse("Failed to import credentials: " + e.getMessage());
+            return errorResponse("Failed to import credentials. Check server logs for details.");
         }
     }
 
@@ -1035,20 +1034,20 @@ public class SystemCredentialsAction implements RootAction {
      */
     private JSONObject serializeCredential(StandardCredentials c) {
         JSONObject credData = new JSONObject();
-        credData.put("id", c.getId());
-        credData.put("description", c.getDescription());
+        credData.put("id", CredentialService.escapeHtml(c.getId()));
+        credData.put("description", CredentialService.escapeHtml(c.getDescription()));
         credData.put("scope", c.getScope().name());
         credData.put("type", CredentialService.getCredentialsTypeKey(c));
 
         if (c instanceof UsernamePasswordCredentials) {
             UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
-            credData.put("username", upc.getUsername());
+            credData.put("username", CredentialService.escapeHtml(upc.getUsername()));
             credData.put("password", Secret.toString(upc.getPassword()));
         } else if (c instanceof StringCredentials) {
             credData.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
         } else if (c instanceof BasicSSHUserPrivateKey) {
             BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
-            credData.put("username", ssh.getUsername());
+            credData.put("username", CredentialService.escapeHtml(ssh.getUsername()));
             credData.put("passphrase", Secret.toString(ssh.getPassphrase()));
             credData.put("privateKey", ssh.getPrivateKey());
         }

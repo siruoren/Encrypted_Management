@@ -15,11 +15,7 @@ import net.sf.json.JSONObject;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 
-import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -31,14 +27,10 @@ import java.util.logging.Logger;
 /**
  * 凭据备份/导出/导入服务
  * 解决单点故障问题：凭据可导出为加密文件，独立于Jenkins Master存储
- * 使用AES-256-GCM加密，确保导出文件安全
+ * 使用AES-256-GCM加密（由CryptoService提供），确保导出文件安全
  */
 public class CredentialBackupService {
     private static final Logger LOGGER = Logger.getLogger(CredentialBackupService.class.getName());
-    private static final String ALGORITHM = "AES/GCM/NoPadding";
-    private static final int GCM_TAG_LENGTH = 128;
-    private static final int GCM_IV_LENGTH = 12;
-    private static final int AES_KEY_LENGTH = 256;
     private static final String BACKUP_VERSION = "1.0";
 
     private CredentialBackupService() {}
@@ -109,7 +101,7 @@ public class CredentialBackupService {
 
         // 加密
         String plainJson = exportObj.toString();
-        return encrypt(plainJson, encryptionPassword);
+        return CryptoService.aesEncrypt(plainJson, encryptionPassword);
     }
 
     /**
@@ -129,7 +121,7 @@ public class CredentialBackupService {
                                                 String encryptionPassword, boolean overwrite,
                                                 java.util.Set<Integer> selectedIndices) throws Exception {
         // 解密
-        String plainJson = decrypt(encryptedData, encryptionPassword);
+        String plainJson = CryptoService.aesDecrypt(encryptedData, encryptionPassword);
         JSONObject importObj = JSONObject.fromObject(plainJson);
         return importCredentialsFromJson(itemGroup, importObj, overwrite, selectedIndices);
     }
@@ -290,112 +282,14 @@ public class CredentialBackupService {
      * AES-256-GCM加密（公开方法，供ZIP导出等场景使用）
      */
     public static String encryptData(String plaintext, String password) throws Exception {
-        return encrypt(plaintext, password);
+        return CryptoService.aesEncrypt(plaintext, password);
     }
 
     /**
      * AES-256-GCM解密（公开方法，供ZIP导入等场景使用）
      */
     public static String decryptData(String encryptedBase64, String password) throws Exception {
-        return decrypt(encryptedBase64, password);
+        return CryptoService.aesDecrypt(encryptedBase64, password);
     }
 
-    /**
-     * AES-256-GCM加密
-     */
-    private static String encrypt(String plaintext, String password) throws Exception {
-        byte[] salt = new byte[16];
-        new SecureRandom().nextBytes(salt);
-
-        // 从密码派生密钥 (PBKDF2)
-        SecretKey key = deriveKey(password, salt);
-
-        // 生成IV
-        byte[] iv = new byte[GCM_IV_LENGTH];
-        new SecureRandom().nextBytes(iv);
-
-        // 加密
-        Cipher cipher = Cipher.getInstance(ALGORITHM);
-        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.ENCRYPT_MODE, key, gcmSpec);
-        byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
-
-        // 组合: salt(16) + iv(12) + ciphertext
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        bos.write(salt);
-        bos.write(iv);
-        bos.write(ciphertext);
-
-        return Base64.getEncoder().encodeToString(bos.toByteArray());
-    }
-
-    /**
-     * AES-256-GCM解密
-     */
-    private static String decrypt(String encryptedBase64, String password) throws Exception {
-        byte[] data = Base64.getDecoder().decode(encryptedBase64);
-
-        // 提取salt, iv, ciphertext
-        byte[] salt = new byte[16];
-        byte[] iv = new byte[GCM_IV_LENGTH];
-        System.arraycopy(data, 0, salt, 0, 16);
-        System.arraycopy(data, 16, iv, 0, GCM_IV_LENGTH);
-
-        int ciphertextLength = data.length - 16 - GCM_IV_LENGTH;
-        byte[] ciphertext = new byte[ciphertextLength];
-        System.arraycopy(data, 16 + GCM_IV_LENGTH, ciphertext, 0, ciphertextLength);
-
-        // 从密码派生密钥
-        SecretKey key = deriveKey(password, salt);
-
-        // 解密
-        Cipher cipher = Cipher.getInstance(ALGORITHM);
-        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
-        cipher.init(Cipher.DECRYPT_MODE, key, gcmSpec);
-        byte[] plaintext = cipher.doFinal(ciphertext);
-
-        return new String(plaintext, StandardCharsets.UTF_8);
-    }
-
-    /**
-     * PBKDF2从密码派生AES-256密钥
-     * 安全增强：混合Jenkins master.key作为额外熵源，防止离线暴力破解
-     */
-    private static SecretKey deriveKey(String password, byte[] salt) throws Exception {
-        // 尝试读取Jenkins master.key作为额外熵源
-        byte[] masterKeyBytes = getJenkinsMasterKeyBytes();
-        byte[] combinedSalt = salt;
-        if (masterKeyBytes != null && masterKeyBytes.length > 0) {
-            // 将master.key混入salt，增加离线破解难度
-            combinedSalt = new byte[salt.length + Math.min(masterKeyBytes.length, 32)];
-            System.arraycopy(salt, 0, combinedSalt, 0, salt.length);
-            System.arraycopy(masterKeyBytes, 0, combinedSalt, salt.length,
-                    Math.min(masterKeyBytes.length, 32));
-        }
-
-        javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
-        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
-                password.toCharArray(), combinedSalt, 65536, AES_KEY_LENGTH);
-        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
-        // 擦除密码字符数组
-        spec.clearPassword();
-        return new SecretKeySpec(keyBytes, "AES");
-    }
-
-    /**
-     * 读取Jenkins master.key字节作为额外熵源
-     * 如果读取失败则返回null（降级为仅密码模式，兼容无master.key环境）
-     */
-    private static byte[] getJenkinsMasterKeyBytes() {
-        try {
-            java.io.File masterKeyFile = new java.io.File(
-                    jenkins.model.Jenkins.get().getRootDir(), "secrets/master.key");
-            if (masterKeyFile.exists() && masterKeyFile.canRead()) {
-                return java.nio.file.Files.readAllBytes(masterKeyFile.toPath());
-            }
-        } catch (Exception e) {
-            LOGGER.log(Level.FINE, "Could not read Jenkins master.key for key derivation", e);
-        }
-        return null;
-    }
 }

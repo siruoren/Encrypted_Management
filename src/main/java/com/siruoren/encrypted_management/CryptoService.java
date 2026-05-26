@@ -15,6 +15,7 @@ import org.kohsuke.stapler.HttpResponse;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -34,6 +35,11 @@ import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import javax.crypto.Cipher;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * 加密服务类
@@ -270,5 +276,110 @@ public class CryptoService {
                 rsp.getWriter().write(json.toString());
             }
         };
+    }
+
+    // ==================== AES-256-GCM 加密/解密 ====================
+
+    private static final String AES_ALGORITHM = "AES/GCM/NoPadding";
+    private static final int GCM_TAG_LENGTH = 128;
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int AES_KEY_LENGTH = 256;
+
+    /**
+     * AES-256-GCM加密
+     * 格式: Base64(salt[16] + iv[12] + ciphertext)
+     *
+     * @param plaintext 明文
+     * @param password 加密密码
+     * @return Base64编码的密文
+     */
+    public static String aesEncrypt(String plaintext, String password) throws Exception {
+        byte[] salt = new byte[16];
+        new SecureRandom().nextBytes(salt);
+
+        SecretKey key = deriveAesKey(password, salt);
+
+        byte[] iv = new byte[GCM_IV_LENGTH];
+        new SecureRandom().nextBytes(iv);
+
+        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
+        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+        cipher.init(Cipher.ENCRYPT_MODE, key, gcmSpec);
+        byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        bos.write(salt);
+        bos.write(iv);
+        bos.write(ciphertext);
+
+        return Base64.getEncoder().encodeToString(bos.toByteArray());
+    }
+
+    /**
+     * AES-256-GCM解密
+     *
+     * @param encryptedBase64 Base64编码的密文
+     * @param password 解密密码
+     * @return 明文
+     */
+    public static String aesDecrypt(String encryptedBase64, String password) throws Exception {
+        byte[] data = Base64.getDecoder().decode(encryptedBase64);
+
+        byte[] salt = new byte[16];
+        byte[] iv = new byte[GCM_IV_LENGTH];
+        System.arraycopy(data, 0, salt, 0, 16);
+        System.arraycopy(data, 16, iv, 0, GCM_IV_LENGTH);
+
+        int ciphertextLength = data.length - 16 - GCM_IV_LENGTH;
+        byte[] ciphertext = new byte[ciphertextLength];
+        System.arraycopy(data, 16 + GCM_IV_LENGTH, ciphertext, 0, ciphertextLength);
+
+        SecretKey key = deriveAesKey(password, salt);
+
+        Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
+        GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+        cipher.init(Cipher.DECRYPT_MODE, key, gcmSpec);
+        byte[] plaintext = cipher.doFinal(ciphertext);
+
+        return new String(plaintext, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * PBKDF2从密码派生AES-256密钥
+     * 安全增强：混合Jenkins master.key作为额外熵源，防止离线暴力破解
+     */
+    private static SecretKey deriveAesKey(String password, byte[] salt) throws Exception {
+        byte[] masterKeyBytes = getJenkinsMasterKeyBytes();
+        byte[] combinedSalt = salt;
+        if (masterKeyBytes != null && masterKeyBytes.length > 0) {
+            combinedSalt = new byte[salt.length + Math.min(masterKeyBytes.length, 32)];
+            System.arraycopy(salt, 0, combinedSalt, 0, salt.length);
+            System.arraycopy(masterKeyBytes, 0, combinedSalt, salt.length,
+                    Math.min(masterKeyBytes.length, 32));
+        }
+
+        javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+        javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
+                password.toCharArray(), combinedSalt, 65536, AES_KEY_LENGTH);
+        byte[] keyBytes = factory.generateSecret(spec).getEncoded();
+        spec.clearPassword();
+        return new SecretKeySpec(keyBytes, "AES");
+    }
+
+    /**
+     * 读取Jenkins master.key字节作为额外熵源
+     * 如果读取失败则返回null（降级为仅密码模式，兼容无master.key环境）
+     */
+    private static byte[] getJenkinsMasterKeyBytes() {
+        try {
+            java.io.File masterKeyFile = new java.io.File(
+                    jenkins.model.Jenkins.get().getRootDir(), "secrets/master.key");
+            if (masterKeyFile.exists() && masterKeyFile.canRead()) {
+                return java.nio.file.Files.readAllBytes(masterKeyFile.toPath());
+            }
+        } catch (Exception e) {
+            // 降级为仅密码模式
+        }
+        return null;
     }
 }

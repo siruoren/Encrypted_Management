@@ -16,7 +16,6 @@
             <!-- 操作按钮栏 -->
             <div style="margin-bottom: 1em; display:flex; flex-wrap:wrap; gap:0.5em;">
                 <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%Add Credential}</button>
-                <button class="jenkins-button" onclick="openAuditLogDialog()">${%Audit Log}</button>
                 <button class="jenkins-button" onclick="openExportDialog()">${%Export Credentials}</button>
                 <button class="jenkins-button" onclick="openImportDialog()">${%Import Credentials}</button>
             </div>
@@ -185,27 +184,6 @@
                 </div>
             </div>
 
-            <!-- ==================== 审计日志弹窗 ==================== -->
-            <div id="audit-log-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:800px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Audit Log}</h2>
-                    <pre id="audit-log-content" style="max-height:400px; overflow-y:auto; background:#f5f5f5; padding:1em; border-radius:4px; font-size:0.85em; white-space:pre-wrap; word-break:break-all;">${%Loading credentials...}</pre>
-                    <!-- 审计日志配置 -->
-                    <div style="border-top:1px solid #ddd; padding-top:1em; margin-top:1em;">
-                        <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Max Retention Days}</div>
-                            <div class="jenkins-form-control" style="display:flex; align-items:center; gap:0.5em;">
-                                <input type="number" id="auditMaxRetentionDays" class="jenkins-input" min="1" max="365" value="30" style="width:80px;"/>
-                                <button class="jenkins-button" onclick="saveAuditConfig()">${%Save}</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button" onclick="closeDialog('audit-log-dialog')">${%Cancel}</button>
-                    </div>
-                </div>
-            </div>
-
             <!-- ==================== 导出凭据弹窗 ==================== -->
             <div id="export-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
@@ -370,7 +348,6 @@
                         updateFailed: "${%Update failed}",
                         generateKeyPair: "${%Generate Key Pair}",
                         publicKey: "${%Public Key}",
-                        noAuditLogs: "${%No audit logs found}",
                         passwordMinLength: "${%Password must be at least 8 characters}",
                         passwordRequired: "${%Password is required}",
                         encryptedDataRequired: "${%Encrypted data is required}",
@@ -875,64 +852,6 @@
                                 setTimeout(function() { window.location.reload(); }, 1000);
                             } else {
                                 showMessage(i18n.failedToDelete, 'error');
-                            }
-                        })
-                        .catch(function(err) {
-                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                        });
-                    }
-
-                    // ==================== 审计日志弹窗 ====================
-
-                    function openAuditLogDialog() {
-                        var content = document.getElementById('audit-log-content');
-                        content.textContent = i18n.loading;
-                        document.getElementById('audit-log-dialog').style.display = '';
-
-                        secureFetch(credentialsUrl + 'auditLog', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: 'limit=200'
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                content.textContent = data.logs.join('\n') || i18n.noAuditLogs;
-                                if (data.maxRetentionDays) {
-                                    document.getElementById('auditMaxRetentionDays').value = data.maxRetentionDays;
-                                }
-                            } else {
-                                content.textContent = data.message || i18n.requestFailed;
-                            }
-                        })
-                        .catch(function(err) {
-                            content.textContent = i18n.requestFailed + ': ' + err.message;
-                        });
-                    }
-
-                    function saveAuditConfig() {
-                        var days = document.getElementById('auditMaxRetentionDays').value;
-                        if (!days || parseInt(days) < 1) {
-                            showMessage(i18n.requestFailed, 'error');
-                            return;
-                        }
-                        secureFetch(credentialsUrl + 'configureAuditLog', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: 'maxRetentionDays=' + encodeURIComponent(days)
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                showMessage(data.message, 'success');
-                            } else {
-                                showMessage(data.message || i18n.requestFailed, 'error');
                             }
                         })
                         .catch(function(err) {

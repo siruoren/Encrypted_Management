@@ -16,12 +16,12 @@
             <!-- 操作按钮栏 -->
             <div style="margin-bottom: 1em; display:flex; flex-wrap:wrap; gap:0.5em;">
                 <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%Add Credential}</button>
-                <button class="jenkins-button" onclick="openAuditLogDialog()">${%Audit Log}</button>
                 <button class="jenkins-button" onclick="openExportDialog()">${%Export Credentials}</button>
                 <button class="jenkins-button" onclick="openImportDialog()">${%Import Credentials}</button>
                 <button class="jenkins-button" onclick="openExportAllZipDialog()">${%Export All (ZIP)}</button>
                 <button class="jenkins-button" onclick="openImportAllZipDialog()">${%Import All (ZIP)}</button>
                 <button class="jenkins-button" onclick="openStorageDialog()">${%External Storage}</button>
+                <button class="jenkins-button" onclick="openAuditLogDialog()">${%Audit Log}</button>
             </div>
 
             <!-- 凭据列表（由JS自动加载） -->
