@@ -28,13 +28,19 @@ public class ImportResult {
         private final String type;
         private final Status status;
         private final String message;
+        private final String folder;
 
-        public ItemResult(String id, String description, String type, Status status, String message) {
+        public ItemResult(String id, String description, String type, Status status, String message, String folder) {
             this.id = id;
             this.description = description;
             this.type = type;
             this.status = status;
             this.message = message;
+            this.folder = folder;
+        }
+
+        public ItemResult(String id, String description, String type, Status status, String message) {
+            this(id, description, type, status, message, null);
         }
 
         public String getId() { return id; }
@@ -42,6 +48,7 @@ public class ImportResult {
         public String getType() { return type; }
         public Status getStatus() { return status; }
         public String getMessage() { return message; }
+        public String getFolder() { return folder; }
 
         public JSONObject toJson() {
             JSONObject obj = new JSONObject();
@@ -50,6 +57,7 @@ public class ImportResult {
             obj.put("type", type != null ? type : "");
             obj.put("status", status.name());
             obj.put("message", message != null ? message : "");
+            obj.put("folder", folder != null ? folder : "");
             return obj;
         }
     }
@@ -67,13 +75,18 @@ public class ImportResult {
 
     /** 线程安全：记录一条凭据导入结果 */
     public void record(Status status, String id, String description, String type, String message) {
+        record(status, id, description, type, message, folderName);
+    }
+
+    /** 线程安全：记录一条凭据导入结果（含所在目录） */
+    public void record(Status status, String id, String description, String type, String message, String folder) {
         switch (status) {
             case IMPORTED: imported.incrementAndGet(); break;
             case UPDATED:  updated.incrementAndGet(); break;
             case SKIPPED:  skipped.incrementAndGet(); break;
             case FAILED:   failed.incrementAndGet(); break;
         }
-        items.add(new ItemResult(id, description, type, status, message));
+        items.add(new ItemResult(id, description, type, status, message, folder));
     }
 
     public void record(Status status, String id, String description, String type) {

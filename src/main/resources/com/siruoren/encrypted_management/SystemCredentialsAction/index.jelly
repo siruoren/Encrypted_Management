@@ -244,20 +244,20 @@
             <div id="audit-log-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:800px; border-radius:8px; max-height:80vh; overflow-y:auto;">
                     <h2>${%audit.log}</h2>
-                    <pre id="audit-log-content" style="max-height:400px; overflow-y:auto; background:#f5f5f5; padding:1em; border-radius:4px; font-size:0.85em; white-space:pre-wrap; word-break:break-all;">${%loading}</pre>
-                    <!-- 审计日志配置 -->
-                    <div style="border-top:1px solid #ddd; padding-top:1em; margin-top:1em;">
-                        <div class="jenkins-form-item">
+                    <!-- 审计日志配置和关闭按钮放在日志内容上方 -->
+                    <div style="border-bottom:1px solid #ddd; padding-bottom:1em; margin-bottom:1em;">
+                        <div class="jenkins-form-item" style="margin-bottom:0.5em;">
                             <div class="jenkins-form-label">${%max.retention.days}</div>
                             <div class="jenkins-form-control" style="display:flex; align-items:center; gap:0.5em;">
                                 <input type="number" id="auditMaxRetentionDays" class="jenkins-input" min="1" max="365" value="30" style="width:80px;"/>
                                 <button class="jenkins-button" onclick="saveAuditConfig()">${%save}</button>
                             </div>
                         </div>
+                        <div class="jenkins-form-item" style="margin-bottom:0;">
+                            <button class="jenkins-button" onclick="closeDialog('audit-log-dialog')">${%close}</button>
+                        </div>
                     </div>
-                    <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button" onclick="closeDialog('audit-log-dialog')">${%cancel}</button>
-                    </div>
+                    <pre id="audit-log-content" style="max-height:400px; overflow-y:auto; background:#f5f5f5; padding:1em; border-radius:4px; font-size:0.85em; white-space:pre-wrap; word-break:break-all;">${%loading}</pre>
                 </div>
             </div>
 
@@ -627,6 +627,7 @@
                             tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">ID</th>';
                             tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.description + '</th>';
                             tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.kind + '</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.folder + '</th>';
                             tableHtml += '<th style="padding:0.4em; text-align:center; border-bottom:1px solid #ddd;">' + i18n.importResult + '</th>';
                             tableHtml += '</tr></thead><tbody>';
                             for (var i = 0; i < items.length; i++) {
@@ -640,6 +641,7 @@
                                 tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.id || '-') + '</td>';
                                 tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.description || '-') + '</td>';
                                 tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.type || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee; font-size:0.8em; color:#666;">' + (item.folder || '-') + '</td>';
                                 tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee; text-align:center; color:' + statusColor + '; font-weight:bold;">' + statusText + '</td>';
                                 tableHtml += '</tr>';
                             }

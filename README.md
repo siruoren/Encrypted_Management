@@ -4,7 +4,7 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 
 ## 功能特性
 
-- **凭据类型支持**：Secret Text、Username with Password、SSH Username with Private Key
+- **凭据类型支持**：Secret Text、Username with Password、SSH Username with Private Key、Secret file、Certificate
 - **自动加载**：打开页面自动加载当前文件夹的所有凭据
 - **CRUD 操作**：创建、解密查看、更新、删除凭据
 - **密钥对生成**：SSH 凭据支持一键生成 RSA 2048 密钥对，自动填充私钥和公钥
@@ -49,6 +49,18 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 - 所有操作（创建、解密、更新、删除）均需通过权限校验
 
 ## 版本历史
+
+### v1.0.1-SNAPSHOT (Latest)
+
+- **Secret file 和 Certificate 凭据类型**：新增 Secret file（文件凭据）和 Certificate（证书凭据）两种凭据类型的完整 CRUD 支持，现在支持所有 5 种 Jenkins 常用凭据类型
+
+- **国际化 key 格式统一**：所有 i18n key 从空格分隔格式统一为 dot 格式（如 `export.all.zip`），提升可维护性
+
+- **ZIP 导入权限修复**：修复 ZIP 全量导入时线程池权限上下文丢失导致所有凭据导入失败的问题，审计日志用户名从 `anonymous` 改为实际登录用户
+
+- **导出 ID 转义修复**：修复导出凭据时对 id、username 等关键字段进行 HTML 转义导致导入时 ID 不匹配的问题
+
+- **单元测试更新**：更新测试适配新的公开 API 和加密文件格式
 
 ### v1.0.1-SNAPSHOT
 

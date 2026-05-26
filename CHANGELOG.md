@@ -6,6 +6,34 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 
 ### Added
 
+- **Secret file 和 Certificate 凭据类型支持**：新增 Secret file（文件凭据）和 Certificate（证书凭据）两种凭据类型的完整 CRUD 支持，包括创建、解密查看、更新、删除、导出和导入
+
+- **凭据类型全量支持**：现在支持所有 5 种 Jenkins 常用凭据类型：Secret Text、Username with Password、SSH Username with Private Key、Secret file、Certificate
+
+### Changed
+
+- **国际化 key 格式统一**：所有 i18n key 从空格分隔格式（如 `Export All (ZIP)`）统一为 dot 格式（如 `export.all.zip`），提升可维护性和一致性
+
+- **ZIP 导入权限上下文修复**：ZIP 全量导入时线程池工作线程使用实际登录用户的 Authentication，而非系统默认的 anonymous 认证，修复导入时 `AccessDeniedException` 权限不足错误
+
+- **审计日志用户名修复**：ZIP 全量导入的审计日志中用户名从 `anonymous` 改为实际页面登录用户
+
+### Fixed
+
+- **批量导入全部失败**：修复 ZIP 全量导入时所有凭据导入结果均为失败的问题，根本原因是线程池中权限上下文丢失
+
+- **Certificate 凭据导出类型错误**：修复 `getKeyStore()` 返回 `KeyStore` 而非 `SecretBytes` 的类型转换错误，改为通过 `getKeyStoreSource()` 获取原始字节
+
+- **Certificate 凭据构造器参数顺序错误**：修复 `CertificateCredentialsImpl` 构造器中 `password` 与 `keyStoreSource` 参数位置颠倒的问题
+
+- **导出时 ID HTML 转义问题**：修复导出凭据时对 `id`、`username` 等关键字段进行 HTML 转义导致导入时 ID 不匹配的问题
+
+- **单元测试更新**：更新 `CredentialBackupServiceTest` 使用公开 API（`encryptData`/`decryptData`），更新 `FileExternalStorageTest` 适配 `.enc` 加密文件格式和新的目录结构
+
+## [1.0.1-SNAPSHOT] - 2026-05-26 (Previous)
+
+### Added
+
 - **凭据选择导出/导入**：导出凭据弹窗支持选择要导出的凭据（默认不选择），导入凭据弹窗分为两步：先解析数据展示凭据列表（默认全选），再选择要导入的凭据。支持按凭据 ID 筛选导出、按凭据索引筛选导入
 
 - **ZIP 导入流程优化**：全量导入 ZIP 弹窗分为两步：先解析 ZIP 展示所有凭据（按目录分组，默认全选），再选择要导入的凭据；冲突处理从复选框改为单选按钮，支持"跳过已存在的凭据"（默认）和"强制覆盖已存在的凭据"

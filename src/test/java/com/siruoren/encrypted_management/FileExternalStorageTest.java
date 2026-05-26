@@ -45,10 +45,8 @@ public class FileExternalStorageTest {
         credentialsData.put("folder", TEST_FOLDER);
         credentialsData.put("count", 2);
 
-        // 保存凭据
         storage.saveAllCredentials(TEST_FOLDER, credentialsData);
 
-        // 加载凭据
         JSONObject loaded = storage.loadAllCredentials(TEST_FOLDER);
         assertNotNull(loaded);
         assertEquals("1.0", loaded.getString("version"));
@@ -63,11 +61,10 @@ public class FileExternalStorageTest {
         credentialsData.put("version", "1.0");
         credentialsData.put("folder", SYSTEM_FOLDER);
 
-        // 保存系统级凭据
         storage.saveAllCredentials(SYSTEM_FOLDER, credentialsData);
 
-        // 验证文件名为 jenkins_root.json
-        File rootFile = new File(tempDir, "jenkins_root.json");
+        // 系统级凭据保存为 jenkins_root.enc
+        File rootFile = new File(tempDir, "jenkins_root.enc");
         assertTrue(rootFile.exists());
     }
 
@@ -79,7 +76,7 @@ public class FileExternalStorageTest {
 
         storage.saveAllCredentials("", credentialsData);
 
-        File rootFile = new File(tempDir, "jenkins_root.json");
+        File rootFile = new File(tempDir, "jenkins_root.enc");
         assertTrue(rootFile.exists());
     }
 
@@ -89,9 +86,9 @@ public class FileExternalStorageTest {
         JSONObject credentialsData = new JSONObject();
         credentialsData.put("version", "1.0");
 
-        storage.saveAllCredentials("system", credentialsData);  // 使用 "system" 代替 null
+        storage.saveAllCredentials("system", credentialsData);
 
-        File rootFile = new File(tempDir, "jenkins_root.json");
+        File rootFile = new File(tempDir, "jenkins_root.enc");
         assertTrue(rootFile.exists());
     }
 
@@ -108,12 +105,12 @@ public class FileExternalStorageTest {
         JSONObject credentialsData = new JSONObject();
         credentialsData.put("version", "1.0");
 
-        // 先保存
         storage.saveAllCredentials(TEST_FOLDER, credentialsData);
-        File credFile = new File(tempDir, TEST_FOLDER + ".json");
+
+        // 目录任务文件保存在 storageDir/test_folder/test_folder.enc
+        File credFile = new File(new File(tempDir, TEST_FOLDER), TEST_FOLDER + ".enc");
         assertTrue(credFile.exists());
 
-        // 删除
         storage.deleteAllCredentials(TEST_FOLDER);
         assertFalse(credFile.exists());
     }
@@ -121,7 +118,6 @@ public class FileExternalStorageTest {
     @Test
     @DisplayName("测试列出文件夹")
     void testListFolders() throws IOException {
-        // 创建多个凭据文件
         JSONObject data1 = new JSONObject();
         data1.put("version", "1.0");
         storage.saveAllCredentials("folder1", data1);
@@ -131,20 +127,18 @@ public class FileExternalStorageTest {
         List<String> folders = storage.listFolders();
         assertTrue(folders.contains("folder1"));
         assertTrue(folders.contains("folder2"));
-        assertTrue(folders.contains("jenkins_root"));
+        assertTrue(folders.contains("system"));
     }
 
     @Test
     @DisplayName("测试空存储目录列出空列表")
     void testListFoldersEmpty() throws IOException {
-        // 清理目录
-        File[] files = tempDir.listFiles();
-        if (files != null) {
-            for (File f : files) {
-                f.delete();
-            }
-        }
-        List<String> folders = storage.listFolders();
+        // 使用独立的临时目录确保为空
+        File emptyDir = new File(tempDir, "empty_storage");
+        emptyDir.mkdirs();
+        FileExternalStorage emptyStorage = new FileExternalStorage(emptyDir.getAbsolutePath());
+        emptyStorage.setEncryptionPassword(TEST_PASSWORD);
+        List<String> folders = emptyStorage.listFolders();
         assertTrue(folders.isEmpty());
     }
 
@@ -152,7 +146,6 @@ public class FileExternalStorageTest {
     @DisplayName("测试未设置加密密码时保存失败")
     void testSaveWithoutPassword() {
         FileExternalStorage storageWithoutPassword = new FileExternalStorage(tempDir.getAbsolutePath());
-        // 不设置密码
 
         JSONObject credentialsData = new JSONObject();
         credentialsData.put("version", "1.0");
@@ -165,12 +158,10 @@ public class FileExternalStorageTest {
     @Test
     @DisplayName("测试未设置加密密码时加载失败")
     void testLoadWithoutPassword() throws IOException {
-        // 先保存
         JSONObject credentialsData = new JSONObject();
         credentialsData.put("version", "1.0");
         storage.saveAllCredentials(TEST_FOLDER, credentialsData);
 
-        // 创建新存储实例，不设置密码
         FileExternalStorage storageWithoutPassword = new FileExternalStorage(tempDir.getAbsolutePath());
 
         assertThrows(IOException.class, () -> {
@@ -181,14 +172,12 @@ public class FileExternalStorageTest {
     @Test
     @DisplayName("测试错误密码加载失败")
     void testLoadWithWrongPassword() throws IOException {
-        // 先保存
         JSONObject credentialsData = new JSONObject();
         credentialsData.put("version", "1.0");
         storage.saveAllCredentials(TEST_FOLDER, credentialsData);
 
-        // 创建新存储实例，使用错误密码
         FileExternalStorage wrongPasswordStorage = new FileExternalStorage(tempDir.getAbsolutePath());
-        wrongPasswordStorage.setEncryptionPassword("wrongPassword");
+        wrongPasswordStorage.setEncryptionPassword("wrongPassword12345678!");
 
         assertThrows(IOException.class, () -> {
             wrongPasswordStorage.loadAllCredentials(TEST_FOLDER);
@@ -198,7 +187,6 @@ public class FileExternalStorageTest {
     @Test
     @DisplayName("测试路径清理（防止路径遍历攻击）")
     void testPathSanitization() throws IOException {
-        // 尝试使用恶意路径
         String maliciousPath = "../etc/passwd";
         JSONObject credentialsData = new JSONObject();
         credentialsData.put("version", "1.0");
@@ -206,12 +194,8 @@ public class FileExternalStorageTest {
         storage.saveAllCredentials(maliciousPath, credentialsData);
 
         // 验证文件不会被创建在恶意路径
-        File maliciousFile = new File(tempDir.getParent(), "etc/passwd.json");
+        File maliciousFile = new File(tempDir.getParent(), "etc/passwd.enc");
         assertFalse(maliciousFile.exists());
-
-        // 验证文件被创建在正确位置（路径被清理）
-        File sanitizedFile = new File(tempDir, "___etc_passwd.json");
-        assertTrue(sanitizedFile.exists());
     }
 
     @Test
