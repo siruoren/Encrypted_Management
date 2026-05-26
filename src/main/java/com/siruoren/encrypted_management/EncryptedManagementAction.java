@@ -244,6 +244,91 @@ public class EncryptedManagementAction implements Action {
     }
 
     /**
+     * API: 创建Secret file凭据
+     */
+    @RequirePOST
+    public HttpResponse doCreateSecretFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        String description = req.getParameter("description");
+        String fileName = req.getParameter("fileName");
+        String fileContentBase64 = req.getParameter("fileContent");
+
+        if (fileName == null || fileName.isEmpty()) {
+            return errorResponse("File name is required");
+        }
+        if (fileContentBase64 == null || fileContentBase64.isEmpty()) {
+            return errorResponse("File content is required");
+        }
+
+        try {
+            byte[] fileBytes = java.util.Base64.getDecoder().decode(fileContentBase64);
+            com.cloudbees.plugins.credentials.SecretBytes secretBytes =
+                    com.cloudbees.plugins.credentials.SecretBytes.fromBytes(fileBytes);
+            org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl credential =
+                    new org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl(
+                            CredentialsScope.GLOBAL,
+                            (id != null && !id.isEmpty()) ? id : null,
+                            description,
+                            fileName,
+                            secretBytes);
+
+            CredentialsStore store = CredentialService.findStore(folder);
+            if (store == null) {
+                return errorResponse("No credentials store found");
+            }
+            store.addCredentials(Domain.global(), credential);
+            AuditLogger.logCreate(folder.getFullName(), credential.getId(), "SECRET_FILE");
+            return successResponse("Secret file credential created successfully");
+        } catch (Exception e) {
+            return errorResponse(CredentialService.safeErrorMessage("create secret file credential", e));
+        }
+    }
+
+    /**
+     * API: 创建Certificate凭据
+     */
+    @RequirePOST
+    public HttpResponse doCreateCertificate(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        String description = req.getParameter("description");
+        String keyStoreBase64 = req.getParameter("keyStoreBytes");
+        String keyStorePassword = req.getParameter("keyStorePassword");
+
+        if (keyStoreBase64 == null || keyStoreBase64.isEmpty()) {
+            return errorResponse("KeyStore data is required");
+        }
+
+        try {
+            byte[] ksBytes = java.util.Base64.getDecoder().decode(keyStoreBase64);
+            com.cloudbees.plugins.credentials.SecretBytes ksSecretBytes =
+                    com.cloudbees.plugins.credentials.SecretBytes.fromBytes(ksBytes);
+            com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource keyStoreSource =
+                    new com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource(ksSecretBytes);
+            com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl credential =
+                    new com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl(
+                            CredentialsScope.GLOBAL,
+                            (id != null && !id.isEmpty()) ? id : null,
+                            description,
+                            keyStorePassword != null ? keyStorePassword : "",
+                            keyStoreSource);
+
+            CredentialsStore store = CredentialService.findStore(folder);
+            if (store == null) {
+                return errorResponse("No credentials store found");
+            }
+            store.addCredentials(Domain.global(), credential);
+            AuditLogger.logCreate(folder.getFullName(), credential.getId(), "CERTIFICATE");
+            return successResponse("Certificate credential created successfully");
+        } catch (Exception e) {
+            return errorResponse(CredentialService.safeErrorMessage("create certificate credential", e));
+        }
+    }
+
+    /**
      * API: 更新Secret Text凭据
      */
     @RequirePOST
@@ -321,6 +406,97 @@ public class EncryptedManagementAction implements Action {
             return errorResponse(e.getMessage());
         } catch (Exception e) {
             return errorResponse(CredentialService.safeErrorMessage("update SSH credential", e));
+        }
+    }
+
+    /**
+     * API: 更新Secret file凭据
+     */
+    @RequirePOST
+    public HttpResponse doUpdateSecretFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        String description = req.getParameter("description");
+        String fileName = req.getParameter("fileName");
+        String fileContentBase64 = req.getParameter("fileContent");
+
+        if (id == null || id.isEmpty()) {
+            return errorResponse("Credential ID is required");
+        }
+
+        try {
+            StandardCredentials existing = CredentialService.findCredentialById(folder, id);
+            if (existing == null) {
+                return errorResponse("Credential not found: " + id);
+            }
+
+            if (fileContentBase64 == null || fileContentBase64.isEmpty()) {
+                return successResponse("Secret file credential updated (no file change)");
+            }
+
+            byte[] fileBytes = java.util.Base64.getDecoder().decode(fileContentBase64);
+            com.cloudbees.plugins.credentials.SecretBytes secretBytes =
+                    com.cloudbees.plugins.credentials.SecretBytes.fromBytes(fileBytes);
+            String effectiveFileName = (fileName != null && !fileName.isEmpty()) ? fileName :
+                    (existing instanceof org.jenkinsci.plugins.plaincredentials.FileCredentials ?
+                            ((org.jenkinsci.plugins.plaincredentials.FileCredentials) existing).getFileName() : "secret");
+            org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl newCred =
+                    new org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl(
+                            existing.getScope(), id, description, effectiveFileName, secretBytes);
+
+            CredentialsStore store = CredentialService.findStore(folder);
+            store.updateCredentials(Domain.global(), existing, newCred);
+            AuditLogger.logUpdate(folder.getFullName(), id, "SECRET_FILE");
+            return successResponse("Secret file credential updated successfully");
+        } catch (Exception e) {
+            return errorResponse(CredentialService.safeErrorMessage("update secret file credential", e));
+        }
+    }
+
+    /**
+     * API: 更新Certificate凭据
+     */
+    @RequirePOST
+    public HttpResponse doUpdateCertificate(StaplerRequest req, StaplerResponse rsp) throws IOException {
+        folder.checkPermission(Item.CONFIGURE);
+
+        String id = req.getParameter("id");
+        String description = req.getParameter("description");
+        String keyStoreBase64 = req.getParameter("keyStoreBytes");
+        String keyStorePassword = req.getParameter("keyStorePassword");
+
+        if (id == null || id.isEmpty()) {
+            return errorResponse("Credential ID is required");
+        }
+
+        try {
+            StandardCredentials existing = CredentialService.findCredentialById(folder, id);
+            if (existing == null) {
+                return errorResponse("Credential not found: " + id);
+            }
+
+            if (keyStoreBase64 == null || keyStoreBase64.isEmpty()) {
+                return successResponse("Certificate credential updated (no keystore change)");
+            }
+
+            byte[] ksBytes = java.util.Base64.getDecoder().decode(keyStoreBase64);
+            com.cloudbees.plugins.credentials.SecretBytes ksSecretBytes =
+                    com.cloudbees.plugins.credentials.SecretBytes.fromBytes(ksBytes);
+            com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource keyStoreSource =
+                    new com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource(ksSecretBytes);
+            com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl newCred =
+                    new com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl(
+                            existing.getScope(), id, description,
+                            keyStorePassword != null ? keyStorePassword : "",
+                            keyStoreSource);
+
+            CredentialsStore store = CredentialService.findStore(folder);
+            store.updateCredentials(Domain.global(), existing, newCred);
+            AuditLogger.logUpdate(folder.getFullName(), id, "CERTIFICATE");
+            return successResponse("Certificate credential updated successfully");
+        } catch (Exception e) {
+            return errorResponse(CredentialService.safeErrorMessage("update certificate credential", e));
         }
     }
 

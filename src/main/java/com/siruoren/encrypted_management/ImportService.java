@@ -6,7 +6,10 @@ import com.cloudbees.plugins.credentials.CredentialsStore;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.domains.Domain;
 import hudson.model.ItemGroup;
+import hudson.security.ACL;
+import hudson.security.ACLContext;
 import jenkins.model.Jenkins;
+import org.acegisecurity.Authentication;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 
@@ -60,7 +63,7 @@ public class ImportService {
                                                    Set<Integer> selectedIndices) throws Exception {
         String plainJson = CredentialBackupService.decryptData(encryptedData, password);
         JSONObject importObj = JSONObject.fromObject(plainJson);
-        return importFromJson(itemGroup, importObj, overwrite, selectedIndices);
+        return importFromJson(itemGroup, importObj, overwrite, selectedIndices, null);
     }
 
     /**
@@ -70,10 +73,12 @@ public class ImportService {
      * @param importObj       已解密的JSON对象
      * @param overwrite       是否覆盖已存在
      * @param selectedIndices 选中的凭据索引，null表示全部
+     * @param userName        审计日志用户名（线程池场景下传入实际登录用户）
      * @return ImportResult 详细导入结果
      */
     public static ImportResult importFromJson(ItemGroup<?> itemGroup, JSONObject importObj,
-                                              boolean overwrite, Set<Integer> selectedIndices) throws Exception {
+                                              boolean overwrite, Set<Integer> selectedIndices,
+                                              String userName) throws Exception {
         JSONArray credentialsArray = importObj.getJSONArray("credentials");
 
         // 安全检查：凭据数量限制
@@ -139,7 +144,7 @@ public class ImportService {
             }
         }
 
-        AuditLogger.logImport(folderName, result.getSummaryMessage());
+        AuditLogger.logImport(folderName, result.getSummaryMessage(), userName);
         return result;
     }
 
@@ -150,10 +155,12 @@ public class ImportService {
      * @param password        解密密码
      * @param overwrite       是否覆盖已存在
      * @param selectedEntries 选中的条目集合（格式: "entryPath:index"），null表示全部
+     * @param auth            当前请求的Authentication，用于线程池中权限上下文和审计日志
      * @return ImportResult 合并后的导入结果
      */
     public static ImportResult importFromZip(String zipBase64Data, String password,
-                                             boolean overwrite, Set<String> selectedEntries) throws Exception {
+                                             boolean overwrite, Set<String> selectedEntries,
+                                             Authentication auth) throws Exception {
         byte[] zipBytes = java.util.Base64.getDecoder().decode(zipBase64Data);
 
         // 安全检查：ZIP文件大小限制
@@ -177,11 +184,18 @@ public class ImportService {
         ExecutorService executor = ThreadPoolManager.getInstance().getExecutor();
         List<Future<ImportResult>> futures = new ArrayList<>();
 
+        // 使用调用线程传入的Authentication，确保工作线程拥有正确的权限上下文和审计用户
+        final Authentication userAuth = auth != null ? auth : Jenkins.get().getAuthentication();
+        final String userName = userAuth.getName();
+
         for (ZipEntryData entryData : entries) {
             futures.add(executor.submit(new Callable<ImportResult>() {
                 @Override
                 public ImportResult call() throws Exception {
-                    return importZipEntry(entryData, overwrite, selectedEntries);
+                    // 在线程池工作线程中使用实际登录用户的权限上下文
+                    try (ACLContext ctx = ACL.as(userAuth)) {
+                        return importZipEntry(entryData, overwrite, selectedEntries, userName);
+                    }
                 }
             }));
         }
@@ -202,7 +216,7 @@ public class ImportService {
         }
 
         AuditLogger.logImport("system", "ZIP import: " + mergedResult.getSummaryMessage()
-                + ", folders: " + processedFolders.size());
+                + ", folders: " + processedFolders.size(), userName);
         return mergedResult;
     }
 
@@ -225,8 +239,8 @@ public class ImportService {
             throw new IOException("No credentials found in external storage for: " + folderName);
         }
 
-        ImportResult result = importFromJson(itemGroup, externalData, overwrite, null);
-        AuditLogger.logImport(folderName, "imported from external: " + result.getSummaryMessage());
+        ImportResult result = importFromJson(itemGroup, externalData, overwrite, null, null);
+        AuditLogger.logImport(folderName, "imported from external: " + result.getSummaryMessage(), null);
         return result;
     }
 
@@ -295,7 +309,7 @@ public class ImportService {
 
     /** 导入单个ZIP条目 */
     private static ImportResult importZipEntry(ZipEntryData entryData, boolean overwrite,
-                                               Set<String> selectedEntries) throws Exception {
+                                               Set<String> selectedEntries, String userName) throws Exception {
         // 计算该条目中选中的凭据索引
         Set<Integer> selectedIndices = null;
         if (selectedEntries != null) {
@@ -309,7 +323,7 @@ public class ImportService {
             }
         }
 
-        return importFromJson(entryData.targetItemGroup, entryData.importObj, overwrite, selectedIndices);
+        return importFromJson(entryData.targetItemGroup, entryData.importObj, overwrite, selectedIndices, userName);
     }
 
     /** 从ZIP条目路径提取folderName */

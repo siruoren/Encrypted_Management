@@ -1,28 +1,28 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
-    <l:layout title="${%Credentials Management} - ${it.folder.displayName}">
+    <l:layout title="${%credentials.management} - ${it.folder.displayName}">
         <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
         <l:main-panel>
             <j:choose>
                 <j:when test="${it.hasPermission()}">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1em;">
                 <div>
-                    <h1>${%Credentials Management}</h1>
-                    <p>${%Folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
+                    <h1>${%credentials.management}</h1>
+                    <p>${%folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
                 </div>
-                <a href="api-doc" class="jenkins-button" style="white-space:nowrap;">${%API Docs}</a>
+                <a href="api-doc" class="jenkins-button" style="white-space:nowrap;">${%api.docs}</a>
             </div>
 
             <!-- 操作按钮栏 -->
             <div style="margin-bottom: 1em; display:flex; flex-wrap:wrap; gap:0.5em;">
-                <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%Add Credential}</button>
-                <button class="jenkins-button" onclick="openExportDialog()">${%Export Credentials}</button>
-                <button class="jenkins-button" onclick="openImportDialog()">${%Import Credentials}</button>
+                <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%add.credential}</button>
+                <button class="jenkins-button" onclick="openExportDialog()">${%export.credentials}</button>
+                <button class="jenkins-button" onclick="openImportDialog()">${%import.credentials}</button>
             </div>
 
             <!-- 凭据列表（由JS自动加载） -->
             <div id="credentials-container">
-                <div class="jenkins-alert jenkins-alert-info">${%Loading credentials...}</div>
+                <div class="jenkins-alert jenkins-alert-info">${%loading}</div>
             </div>
 
             <!-- ==================== 通用消息弹窗 ==================== -->
@@ -37,81 +37,108 @@
             <!-- ==================== 创建凭据弹窗 ==================== -->
             <div id="create-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Add Credential}</h2>
+                    <h2>${%add.credential}</h2>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Kind}</div>
+                        <div class="jenkins-form-label">${%kind}</div>
                         <div class="jenkins-form-control">
                             <select id="credentialType" class="jenkins-input" onchange="toggleCredentialForm()">
-                                <option value="SECRET_TEXT">${%Secret text}</option>
-                                <option value="USERNAME_PASSWORD">${%Username with password}</option>
-                                <option value="SSH_KEY">${%SSH Username with private key}</option>
+                                <option value="SECRET_TEXT">${%secret.text}</option>
+                                <option value="USERNAME_PASSWORD">${%username.with.password}</option>
+                                <option value="SSH_KEY">${%ssh.username.with.private.key}</option>
+                                <option value="SECRET_FILE">${%secret.file}</option>
+                                <option value="CERTIFICATE">${%certificate}</option>
                             </select>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%ID}</div>
+                        <div class="jenkins-form-label">${%id}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="credId" class="jenkins-input" placeholder="${%Optional - leave blank for auto-generation}"/>
+                            <input type="text" id="credId" class="jenkins-input" placeholder="${%optional.auto.generate}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Description}</div>
+                        <div class="jenkins-form-label">${%description}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="credDescription" class="jenkins-input" placeholder="${%Optional description}"/>
+                            <input type="text" id="credDescription" class="jenkins-input" placeholder="${%optional.description}"/>
                         </div>
                     </div>
                     <div id="form-secret-text">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Secret}</div>
+                            <div class="jenkins-form-label">${%secret}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="credSecret" class="jenkins-input" placeholder="${%Enter secret text}"/>
+                                <input type="password" id="credSecret" class="jenkins-input" placeholder="${%enter.secret.text}"/>
                             </div>
                         </div>
                     </div>
                     <div id="form-username-password" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
-                                <input type="text" id="credUsername" class="jenkins-input" placeholder="${%Enter username}"/>
+                                <input type="text" id="credUsername" class="jenkins-input" placeholder="${%enter.username}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Password}</div>
+                            <div class="jenkins-form-label">${%password}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="credPassword" class="jenkins-input" placeholder="${%Enter password}"/>
+                                <input type="password" id="credPassword" class="jenkins-input" placeholder="${%enter.password}"/>
                             </div>
                         </div>
                     </div>
                     <div id="form-ssh-key" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
-                                <input type="text" id="credSshUsername" class="jenkins-input" placeholder="${%Enter username}"/>
+                                <input type="text" id="credSshUsername" class="jenkins-input" placeholder="${%enter.username}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Passphrase}</div>
+                            <div class="jenkins-form-label">${%passphrase}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="credPassphrase" class="jenkins-input" placeholder="${%Optional passphrase}"/>
+                                <input type="password" id="credPassphrase" class="jenkins-input" placeholder="${%optional.passphrase}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Private Key}</div>
+                            <div class="jenkins-form-label">${%private.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="credPrivateKey" class="jenkins-input" rows="8" placeholder="${%Enter private key}"></textarea>
-                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPair()">${%Generate Key Pair}</button>
+                                <textarea id="credPrivateKey" class="jenkins-input" rows="8" placeholder="${%enter.private.key}"></textarea>
+                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPair()">${%generate.key.pair}</button>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Public Key}</div>
+                            <div class="jenkins-form-label">${%public.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="credPublicKey" class="jenkins-input" rows="2" placeholder="${%Optional - auto-generated with key pair}" readonly="true"></textarea>
+                                <textarea id="credPublicKey" class="jenkins-input" rows="2" placeholder="${%optional.auto.generated.key.pair}" readonly="true"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="form-secret-file" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%file}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="credSecretFile" class="jenkins-input" onchange="handleFileSelect(this)"/>
+                                <input type="hidden" id="credFileContent" value=""/>
+                                <input type="hidden" id="credFileName" value=""/>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="form-certificate" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%certificate}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="credCertificateFile" class="jenkins-input" onchange="handleCertificateSelect(this)" accept=".p12,.pfx,.jks,.keystore"/>
+                                <input type="hidden" id="credKeyStoreBytes" value=""/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%password}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="credKeyStorePassword" class="jenkins-input" placeholder="${%optional.keystore.password}"/>
                             </div>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">${%Add}</button>
-                        <button class="jenkins-button" onclick="closeDialog('create-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">${%add}</button>
+                        <button class="jenkins-button" onclick="closeDialog('create-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                     </div>
                 </div>
             </div>
@@ -119,67 +146,92 @@
             <!-- ==================== 更新凭据弹窗 ==================== -->
             <div id="update-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Update Credential}</h2>
+                    <h2>${%update.credential}</h2>
                     <input type="hidden" id="updateId"/>
                     <input type="hidden" id="updateTypeKey"/>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Description}</div>
+                        <div class="jenkins-form-label">${%description}</div>
                         <div class="jenkins-form-control">
                             <input type="text" id="updateDescription" class="jenkins-input"/>
                         </div>
                     </div>
                     <div id="update-form-secret-text" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Secret}</div>
+                            <div class="jenkins-form-label">${%secret}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
+                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%leave.blank.keep.current}"/>
                             </div>
                         </div>
                     </div>
                     <div id="update-form-username-password" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
                                 <input type="text" id="updateUsername" class="jenkins-input"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Password}</div>
+                            <div class="jenkins-form-label">${%password}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
+                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%leave.blank.keep.current}"/>
                             </div>
                         </div>
                     </div>
                     <div id="update-form-ssh-key" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
                                 <input type="text" id="updateSshUsername" class="jenkins-input"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Passphrase}</div>
+                            <div class="jenkins-form-label">${%passphrase}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
+                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%leave.blank.keep.current}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Private Key}</div>
+                            <div class="jenkins-form-label">${%private.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%Leave blank to keep current value}"></textarea>
-                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPairForUpdate()">${%Generate Key Pair}</button>
+                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%leave.blank.keep.current}"></textarea>
+                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPairForUpdate()">${%generate.key.pair}</button>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Public Key}</div>
+                            <div class="jenkins-form-label">${%public.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="updatePublicKey" class="jenkins-input" rows="2" placeholder="${%Optional - auto-generated with key pair}" readonly="true"></textarea>
+                                <textarea id="updatePublicKey" class="jenkins-input" rows="2" placeholder="${%optional.auto.generated.key.pair}" readonly="true"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="update-form-secret-file" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%file}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="updateSecretFile" class="jenkins-input" onchange="handleUpdateFileSelect(this)"/>
+                                <input type="hidden" id="updateFileContent" value=""/>
+                                <input type="hidden" id="updateFileName" value=""/>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="update-form-certificate" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%certificate}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="updateCertificateFile" class="jenkins-input" onchange="handleUpdateCertificateSelect(this)" accept=".p12,.pfx,.jks,.keystore"/>
+                                <input type="hidden" id="updateKeyStoreBytes" value=""/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%password}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="updateKeyStorePassword" class="jenkins-input" placeholder="${%optional.keystore.password}"/>
                             </div>
                         </div>
                     </div>
                     <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button jenkins-button--primary" onclick="submitUpdate()">${%Save}</button>
-                        <button class="jenkins-button" onclick="closeDialog('update-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="submitUpdate()">${%save}</button>
+                        <button class="jenkins-button" onclick="closeDialog('update-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                     </div>
                 </div>
             </div>
@@ -187,35 +239,35 @@
             <!-- ==================== 导出凭据弹窗 ==================== -->
             <div id="export-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Export Credentials}</h2>
+                    <h2>${%export.credentials}</h2>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Encryption Password}</div>
+                        <div class="jenkins-form-label">${%encryption.password}</div>
                         <div class="jenkins-form-control">
-                            <input type="password" id="exportPassword" class="jenkins-input" placeholder="${%At least 8 characters}"/>
+                            <input type="password" id="exportPassword" class="jenkins-input" placeholder="${%at.least.8.characters}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Select Credentials}</div>
+                        <div class="jenkins-form-label">${%select.credentials}</div>
                         <div style="margin-bottom:0.5em;">
-                            <label><input type="checkbox" id="exportSelectAll" onchange="toggleExportSelectAll()"/> ${%Select All}</label>
+                            <label><input type="checkbox" id="exportSelectAll" onchange="toggleExportSelectAll()"/> ${%select.all}</label>
                         </div>
                         <div id="export-credential-list" style="max-height:200px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
-                            <span style="color:#999;">${%Loading credentials...}</span>
+                            <span style="color:#999;">${%loading}</span>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="doExport()">${%Export as Text}</button>
-                        <button class="jenkins-button" onclick="doExportFile()" style="margin-left:0.5em;">${%Download as File}</button>
-                        <button class="jenkins-button" onclick="closeDialog('export-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="doExport()">${%export.as.text}</button>
+                        <button class="jenkins-button" onclick="doExportFile()" style="margin-left:0.5em;">${%download.as.file}</button>
+                        <button class="jenkins-button" onclick="closeDialog('export-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                     </div>
                     <div id="export-result-area" style="display:none; margin-top:1em;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Encrypted Backup Data}</div>
+                            <div class="jenkins-form-label">${%encrypted.backup.data}</div>
                             <div class="jenkins-form-control">
                                 <textarea id="exportData" class="jenkins-input" rows="6" readonly="true" style="font-size:0.8em;"></textarea>
                             </div>
                         </div>
-                        <p style="color:#666; font-size:0.9em;">${%Save this data with password to a safe place. You can restore credentials from this backup on any Jenkins instance.}</p>
+                        <p style="color:#666; font-size:0.9em;">${%backup.data.hint}</p>
                     </div>
                 </div>
             </div>
@@ -223,65 +275,65 @@
             <!-- ==================== 导入凭据弹窗 ==================== -->
             <div id="import-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Import Credentials}</h2>
+                    <h2>${%import.credentials}</h2>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Encryption Password}</div>
+                        <div class="jenkins-form-label">${%encryption.password}</div>
                         <div class="jenkins-form-control">
-                            <input type="password" id="importPassword" class="jenkins-input" placeholder="${%Enter decryption password}"/>
+                            <input type="password" id="importPassword" class="jenkins-input" placeholder="${%enter.decryption.password}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Import Method}</div>
+                        <div class="jenkins-form-label">${%import.method}</div>
                         <div class="jenkins-form-control">
                             <select id="importMethod" class="jenkins-input" onchange="toggleImportMethod()">
-                                <option value="paste">${%Paste Encrypted Data}</option>
-                                <option value="file">${%Upload Backup File}</option>
+                                <option value="paste">${%paste.encrypted.data}</option>
+                                <option value="file">${%upload.backup.file}</option>
                             </select>
                         </div>
                     </div>
                     <div id="import-paste-area">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Encrypted Data}</div>
+                            <div class="jenkins-form-label">${%encrypted.data}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="importData" class="jenkins-input" rows="6" placeholder="${%Paste encrypted backup data here}" style="font-size:0.8em;"></textarea>
+                                <textarea id="importData" class="jenkins-input" rows="6" placeholder="${%paste.encrypted.data.here}" style="font-size:0.8em;"></textarea>
                             </div>
                         </div>
                     </div>
                     <div id="import-file-area" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Backup File}</div>
+                            <div class="jenkins-form-label">${%backup.file}</div>
                             <div class="jenkins-form-control">
                                 <input type="file" id="importFile" class="jenkins-input" accept=".enc,.txt"/>
                             </div>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Conflict Resolution}</div>
+                        <div class="jenkins-form-label">${%conflict.resolution}</div>
                         <div class="jenkins-form-control">
-                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="skip" checked="checked"/> ${%Skip existing credentials}</label>
-                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="overwrite"/> ${%Overwrite existing credentials}</label>
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="skip" checked="checked"/> ${%skip.existing}</label>
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="overwrite"/> ${%overwrite.existing}</label>
                         </div>
                     </div>
                     <!-- 第一步：解析数据 -->
                     <div id="import-step1">
                         <div class="jenkins-form-item">
-                            <button class="jenkins-button jenkins-button--primary" onclick="doParseImport()">${%Parse Data}</button>
-                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                            <button class="jenkins-button jenkins-button--primary" onclick="doParseImport()">${%parse.data}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                         </div>
                     </div>
                     <!-- 第二步：选择凭据并导入 -->
                     <div id="import-step2" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Select Credentials to Import}</div>
+                            <div class="jenkins-form-label">${%select.credentials.import}</div>
                             <div style="margin-bottom:0.5em;">
-                                <label><input type="checkbox" id="importSelectAll" checked="checked" onchange="toggleImportSelectAll()"/> ${%Select All}</label>
+                                <label><input type="checkbox" id="importSelectAll" checked="checked" onchange="toggleImportSelectAll()"/> ${%select.all}</label>
                             </div>
                             <div id="import-credential-list" style="max-height:250px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <button class="jenkins-button jenkins-button--primary" onclick="doImportSelected()">${%Import Selected}</button>
-                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                            <button class="jenkins-button jenkins-button--primary" onclick="doImportSelected()">${%import.selected}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                         </div>
                     </div>
                 </div>
@@ -290,10 +342,10 @@
             <!-- ==================== 解密内容弹窗 ==================== -->
             <div id="decrypt-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:700px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Show Secret}</h2>
+                    <h2>${%show.secret}</h2>
                     <pre id="decrypt-content" style="background:#f0f8ff; padding:1em; border-radius:4px; font-family:monospace; white-space:pre-wrap; word-break:break-all; font-size:0.9em; max-height:400px; overflow-y:auto;"></pre>
                     <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('decrypt-dialog')">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('decrypt-dialog')">${%cancel}</button>
                     </div>
                 </div>
             </div>
@@ -301,11 +353,11 @@
             <!-- 导入结果弹窗 -->
             <div id="import-result-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="position:relative; max-width:600px; margin:80px auto; background:#fff; border-radius:8px; padding:1.5em; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
-                    <h2>${%Import Result}</h2>
+                    <h2>${%import.result}</h2>
                     <div id="import-result-summary" style="margin:1em 0;"></div>
                     <div id="import-result-details" style="max-height:300px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; margin:1em 0;"></div>
                     <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('import-result-dialog');window.location.reload();">${%Close}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('import-result-dialog');window.location.reload();">${%close}</button>
                     </div>
                 </div>
             </div>
@@ -318,52 +370,59 @@
                     var credentialsUrl = "${rootURL}/${it.folder.url}Encrypted_Management/";
 
                     var i18n = {
-                        hide: "${%Hide}",
-                        showSecret: "${%Show Secret}",
-                        update: "${%Update}",
-                        decryptionFailed: "${%Decryption failed}",
-                        requestFailed: "${%Request failed}",
-                        permissionDenied: "${%Permission denied. You lack access to manage credentials for this folder.}",
-                        secretRequired: "${%Secret value is required}",
-                        usernameRequired: "${%Username is required}",
-                        passwordRequired: "${%Password is required}",
-                        privateKeyRequired: "${%Private key is required}",
-                        credentialCreated: "${%Credential created successfully. Reloading...}",
-                        creationFailed: "${%Creation failed}",
-                        confirmDelete: "${%Are you sure you want to delete this credential}",
-                        credentialDeleted: "${%Credential deleted. Reloading...}",
-                        failedToDelete: "${%Failed to delete credential}",
-                        noCredentials: "${%No credentials configured for this folder.}",
-                        id: "${%ID}",
-                        description: "${%Description}",
-                        kind: "${%Kind}",
-                        actions: "${%Actions}",
-                        deleteLabel: "${%Delete}",
-                        loading: "${%Loading credentials...}",
-                        username: "${%Username}",
-                        secret: "${%Secret}",
-                        passphrase: "${%Passphrase}",
-                        privateKey: "${%Private Key}",
-                        credentialUpdated: "${%Credential updated successfully. Reloading...}",
-                        updateFailed: "${%Update failed}",
-                        generateKeyPair: "${%Generate Key Pair}",
-                        publicKey: "${%Public Key}",
-                        passwordMinLength: "${%Password must be at least 8 characters}",
-                        passwordRequired: "${%Password is required}",
-                        encryptedDataRequired: "${%Encrypted data is required}",
-                        exportFailed: "${%Export failed}",
-                        importSuccess: "${%Import completed}",
-                        importFailed: "${%Import failed}",
-                        selectCredentials: "${%Please select at least one credential}",
+                        hide: "${%hide}",
+                        showSecret: "${%show.secret}",
+                        update: "${%update}",
+                        decryptionFailed: "${%decryption.failed}",
+                        requestFailed: "${%request.failed}",
+                        permissionDenied: "${%permission.denied}",
+                        secretRequired: "${%secret.required}",
+                        usernameRequired: "${%username.required}",
+                        passwordRequired: "${%password.required}",
+                        privateKeyRequired: "${%private.key.required}",
+                        credentialCreated: "${%credential.created}",
+                        creationFailed: "${%creation.failed}",
+                        confirmDelete: "${%confirm.delete}",
+                        credentialDeleted: "${%credential.deleted}",
+                        failedToDelete: "${%delete.failed}",
+                        noCredentials: "${%no.credentials}",
+                        id: "${%id}",
+                        description: "${%description}",
+                        kind: "${%kind}",
+                        actions: "${%actions}",
+                        deleteLabel: "${%delete}",
+                        loading: "${%loading}",
+                        username: "${%username}",
+                        secret: "${%secret}",
+                        passphrase: "${%passphrase}",
+                        privateKey: "${%private.key}",
+                        credentialUpdated: "${%credential.updated}",
+                        updateFailed: "${%update.failed}",
+                        generateKeyPair: "${%generate.key.pair}",
+                        publicKey: "${%public.key}",
+                        passwordMinLength: "${%password.min.length}",
+                        passwordRequired: "${%password.required}",
+                        encryptedDataRequired: "${%encrypted.data.required}",
+                        exportFailed: "${%export.failed}",
+                        importSuccess: "${%import.completed}",
+                        importFailed: "${%import.failed}",
+                        selectCredentials: "${%select.at.least.one}",
                         ok: "OK",
-                        error: "${%Error}",
-                        success: "${%Success}",
-                        importResult: "${%Import Result}",
-                        imported: "${%Imported}",
-                        updated: "${%Updated}",
-                        skipped: "${%Skipped}",
-                        failed: "${%Failed}",
-                        close: "${%Close}"
+                        error: "${%error}",
+                        success: "${%success}",
+                        importResult: "${%import.result}",
+                        imported: "${%imported}",
+                        updated: "${%updated}",
+                        skipped: "${%skipped}",
+                        failed: "${%failed}",
+                        close: "${%close}",
+                        fileRequired: "${%file.required}",
+                        certificateRequired: "${%certificate.required}",
+                        fileName: "${%file.name}",
+                        fileSize: "${%file.size}",
+                        fileContent: "${%file.content}",
+                        keyStoreSize: "${%keystore.size}",
+                        password: "${%password}"
                     };
 
                     // ==================== 通用弹窗方法 ====================
@@ -469,6 +528,56 @@
                         document.getElementById('form-secret-text').style.display = type === 'SECRET_TEXT' ? '' : 'none';
                         document.getElementById('form-username-password').style.display = type === 'USERNAME_PASSWORD' ? '' : 'none';
                         document.getElementById('form-ssh-key').style.display = type === 'SSH_KEY' ? '' : 'none';
+                        document.getElementById('form-secret-file').style.display = type === 'SECRET_FILE' ? '' : 'none';
+                        document.getElementById('form-certificate').style.display = type === 'CERTIFICATE' ? '' : 'none';
+                    }
+
+                    function handleFileSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var file = input.files[0];
+                            document.getElementById('credFileName').value = file.name;
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('credFileContent').value = base64;
+                            };
+                            reader.readAsArrayBuffer(file);
+                        }
+                    }
+
+                    function handleCertificateSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('credKeyStoreBytes').value = base64;
+                            };
+                            reader.readAsArrayBuffer(input.files[0]);
+                        }
+                    }
+
+                    function handleUpdateFileSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var file = input.files[0];
+                            document.getElementById('updateFileName').value = file.name;
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('updateFileContent').value = base64;
+                            };
+                            reader.readAsArrayBuffer(file);
+                        }
+                    }
+
+                    function handleUpdateCertificateSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('updateKeyStoreBytes').value = base64;
+                            };
+                            reader.readAsArrayBuffer(input.files[0]);
+                        }
                     }
 
                     function generateKeyPair() {
@@ -567,6 +676,18 @@
                             var passphrase = document.getElementById('credPassphrase').value.trim();
                             endpoint = 'createSSHKey';
                             body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(sshUsername) + '&passphrase=' + encodeURIComponent(passphrase) + '&privateKey=' + encodeURIComponent(privateKey);
+                        } else if (type === 'SECRET_FILE') {
+                            var fileName = document.getElementById('credFileName').value;
+                            var fileContent = document.getElementById('credFileContent').value;
+                            if (!fileName) { showMessage(i18n.fileRequired, 'error'); return; }
+                            endpoint = 'createSecretFile';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&fileName=' + encodeURIComponent(fileName) + '&fileContent=' + encodeURIComponent(fileContent);
+                        } else if (type === 'CERTIFICATE') {
+                            var keyStoreBytes = document.getElementById('credKeyStoreBytes').value;
+                            var keyStorePassword = document.getElementById('credKeyStorePassword').value.trim();
+                            if (!keyStoreBytes) { showMessage(i18n.certificateRequired, 'error'); return; }
+                            endpoint = 'createCertificate';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&keyStoreBytes=' + encodeURIComponent(keyStoreBytes) + '&keyStorePassword=' + encodeURIComponent(keyStorePassword);
                         }
 
                         var createBtn = event.target;
@@ -743,6 +864,13 @@
                                     if (data.publicKey) {
                                         content += '\n' + i18n.publicKey + ':\n' + data.publicKey;
                                     }
+                                } else if (typeKey === 'SECRET_FILE') {
+                                    content = i18n.fileName + ': ' + (data.fileName || '') + '\n' + i18n.fileSize + ': ' + (data.fileSize || 0) + ' bytes';
+                                    if (data.fileContent) {
+                                        content += '\n' + i18n.fileContent + ': [Base64] ' + data.fileContent.substring(0, 200) + (data.fileContent.length > 200 ? '...' : '');
+                                    }
+                                } else if (typeKey === 'CERTIFICATE') {
+                                    content = i18n.keyStoreSize + ': ' + (data.keyStoreSize || 0) + ' bytes\n' + i18n.password + ': ' + (data.keyStorePassword || '(empty)');
                                 }
                                 document.getElementById('decrypt-content').textContent = content;
                                 document.getElementById('decrypt-dialog').style.display = '';
@@ -770,6 +898,8 @@
                         document.getElementById('update-form-secret-text').style.display = 'none';
                         document.getElementById('update-form-username-password').style.display = 'none';
                         document.getElementById('update-form-ssh-key').style.display = 'none';
+                        document.getElementById('update-form-secret-file').style.display = 'none';
+                        document.getElementById('update-form-certificate').style.display = 'none';
                         if (typeKey === 'SECRET_TEXT') {
                             document.getElementById('update-form-secret-text').style.display = '';
                             document.getElementById('updateSecret').value = '';
@@ -782,6 +912,14 @@
                             document.getElementById('updateSshUsername').value = '';
                             document.getElementById('updatePassphrase').value = '';
                             document.getElementById('updatePrivateKey').value = '';
+                        } else if (typeKey === 'SECRET_FILE') {
+                            document.getElementById('update-form-secret-file').style.display = '';
+                            document.getElementById('updateFileContent').value = '';
+                            document.getElementById('updateFileName').value = '';
+                        } else if (typeKey === 'CERTIFICATE') {
+                            document.getElementById('update-form-certificate').style.display = '';
+                            document.getElementById('updateKeyStoreBytes').value = '';
+                            document.getElementById('updateKeyStorePassword').value = '';
                         }
                         document.getElementById('update-dialog').style.display = '';
                     }
@@ -806,6 +944,16 @@
                             var privateKey = document.getElementById('updatePrivateKey').value;
                             endpoint = 'updateSSHKey';
                             body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(sshUsername) + '&passphrase=' + encodeURIComponent(passphrase) + '&privateKey=' + encodeURIComponent(privateKey);
+                        } else if (typeKey === 'SECRET_FILE') {
+                            var fileName = document.getElementById('updateFileName').value;
+                            var fileContent = document.getElementById('updateFileContent').value;
+                            endpoint = 'updateSecretFile';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&fileName=' + encodeURIComponent(fileName) + '&fileContent=' + encodeURIComponent(fileContent);
+                        } else if (typeKey === 'CERTIFICATE') {
+                            var keyStoreBytes = document.getElementById('updateKeyStoreBytes').value;
+                            var keyStorePassword = document.getElementById('updateKeyStorePassword').value;
+                            endpoint = 'updateCertificate';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&keyStoreBytes=' + encodeURIComponent(keyStoreBytes) + '&keyStorePassword=' + encodeURIComponent(keyStorePassword);
                         } else {
                             showMessage('Unsupported credential type', 'error');
                             return;
@@ -1189,7 +1337,7 @@
             </st:once>
                 </j:when>
                 <j:otherwise>
-                    <div class="jenkins-alert jenkins-alert-warning">${%Permission denied. You lack access to manage credentials for this folder.}</div>
+                    <div class="jenkins-alert jenkins-alert-warning">${%permission.denied}</div>
                 </j:otherwise>
             </j:choose>
         </l:main-panel>

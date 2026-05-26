@@ -224,6 +224,8 @@ public class CredentialService {
                 obj.put("username", escapeHtml(((UsernamePasswordCredentials) c).getUsername()));
             } else if (c instanceof BasicSSHUserPrivateKey) {
                 obj.put("username", escapeHtml(((BasicSSHUserPrivateKey) c).getUsername()));
+            } else if (c instanceof org.jenkinsci.plugins.plaincredentials.FileCredentials) {
+                obj.put("fileName", escapeHtml(((org.jenkinsci.plugins.plaincredentials.FileCredentials) c).getFileName()));
             }
 
             arr.add(obj);
@@ -262,6 +264,43 @@ public class CredentialService {
             if (publicKey != null && !publicKey.isEmpty()) {
                 result.put("publicKey", publicKey);
             }
+        } else if (c instanceof org.jenkinsci.plugins.plaincredentials.FileCredentials) {
+            org.jenkinsci.plugins.plaincredentials.FileCredentials fc =
+                    (org.jenkinsci.plugins.plaincredentials.FileCredentials) c;
+            result.put("fileName", escapeHtml(fc.getFileName()));
+            try {
+                java.io.InputStream is = fc.getContent();
+                if (is != null) {
+                    byte[] fileBytes = is.readAllBytes();
+                    is.close();
+                    result.put("fileContent", java.util.Base64.getEncoder().encodeToString(fileBytes));
+                    result.put("fileSize", fileBytes.length);
+                }
+            } catch (IOException e) {
+                result.put("fileContent", "");
+                result.put("fileSize", 0);
+            }
+        } else if (c instanceof com.cloudbees.plugins.credentials.common.CertificateCredentials) {
+            com.cloudbees.plugins.credentials.common.CertificateCredentials cc =
+                    (com.cloudbees.plugins.credentials.common.CertificateCredentials) c;
+            if (cc instanceof com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl) {
+                com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl cci =
+                        (com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl) cc;
+                com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.KeyStoreSource ksSource = cci.getKeyStoreSource();
+                if (ksSource instanceof com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource) {
+                    com.cloudbees.plugins.credentials.SecretBytes uploadedKeystore =
+                            ((com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource) ksSource).getUploadedKeystore();
+                    if (uploadedKeystore != null) {
+                        result.put("keyStoreSize", uploadedKeystore.getPlainData().length);
+                    }
+                } else {
+                    byte[] ksBytes = ksSource.getKeyStoreBytes();
+                    if (ksBytes != null) {
+                        result.put("keyStoreSize", ksBytes.length);
+                    }
+                }
+            }
+            result.put("keyStorePassword", Secret.toString(cc.getPassword()));
         }
 
         return result;
@@ -521,6 +560,10 @@ public class CredentialService {
             return "SSH Username with private key";
         } else if (c instanceof StringCredentials) {
             return "Secret text";
+        } else if (c instanceof org.jenkinsci.plugins.plaincredentials.FileCredentials) {
+            return "Secret file";
+        } else if (c instanceof com.cloudbees.plugins.credentials.common.CertificateCredentials) {
+            return "Certificate";
         }
         return c.getClass().getSimpleName();
     }
@@ -532,6 +575,10 @@ public class CredentialService {
             return "SSH_KEY";
         } else if (c instanceof StringCredentials) {
             return "SECRET_TEXT";
+        } else if (c instanceof org.jenkinsci.plugins.plaincredentials.FileCredentials) {
+            return "SECRET_FILE";
+        } else if (c instanceof com.cloudbees.plugins.credentials.common.CertificateCredentials) {
+            return "CERTIFICATE";
         }
         return "OTHER";
     }
@@ -557,13 +604,14 @@ public class CredentialService {
 
     /** 允许的凭据类型白名单 */
     private static final java.util.Set<String> ALLOWED_CREDENTIAL_TYPES = java.util.Set.of(
-            "USERNAME_PASSWORD", "SSH_KEY", "SECRET_TEXT"
+            "USERNAME_PASSWORD", "SSH_KEY", "SECRET_TEXT", "SECRET_FILE", "CERTIFICATE"
     );
 
     /** 允许的JSON字段白名单 */
     private static final java.util.Set<String> ALLOWED_FIELDS = java.util.Set.of(
             "id", "description", "scope", "type",
-            "username", "password", "secret", "privateKey", "passphrase", "publicKey"
+            "username", "password", "secret", "privateKey", "passphrase", "publicKey",
+            "fileName", "fileContent", "keyStoreBytes", "keyStorePassword"
     );
 
     /**
@@ -616,6 +664,22 @@ public class CredentialService {
         String privateKey = credObj.optString("privateKey", null);
         if (privateKey != null && privateKey.length() > MAX_PRIVATE_KEY_LENGTH) {
             throw new ValidationException("Private key exceeds maximum length");
+        }
+        String fileName = credObj.optString("fileName", null);
+        if (fileName != null && fileName.length() > 255) {
+            throw new ValidationException("File name exceeds maximum length");
+        }
+        String fileContent = credObj.optString("fileContent", null);
+        if (fileContent != null && fileContent.length() > MAX_SECRET_LENGTH) {
+            throw new ValidationException("File content exceeds maximum length");
+        }
+        String keyStoreBytes = credObj.optString("keyStoreBytes", null);
+        if (keyStoreBytes != null && keyStoreBytes.length() > MAX_SECRET_LENGTH) {
+            throw new ValidationException("KeyStore bytes exceed maximum length");
+        }
+        String keyStorePassword = credObj.optString("keyStorePassword", null);
+        if (keyStorePassword != null && keyStorePassword.length() > MAX_PASSWORD_LENGTH) {
+            throw new ValidationException("KeyStore password exceeds maximum length");
         }
     }
 }

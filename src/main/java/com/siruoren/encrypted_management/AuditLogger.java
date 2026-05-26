@@ -106,7 +106,17 @@ public class AuditLogger {
      * - 绝对禁止记录任何凭据的明文值
      */
     public static void log(String folderName, String action, String credentialId, String credentialType, String detail) {
-        String user = getCurrentUser();
+        log(folderName, action, credentialId, credentialType, detail, null);
+    }
+
+    /**
+     * 记录审计日志（异步非阻塞）
+     * 使用单线程Executor顺序写入，避免并发冲突和阻塞调用线程
+     *
+     * @param userName 显式传入的用户名，null时自动获取当前Authentication
+     */
+    public static void log(String folderName, String action, String credentialId, String credentialType, String detail, String userName) {
+        String user = userName != null ? userName : getCurrentUser();
         String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
         // 脱敏：对credentialId和folder进行哈希处理
         String safeCredId = credentialId != null ? hashForAudit(credentialId) : "*";
@@ -169,11 +179,15 @@ public class AuditLogger {
     }
 
     public static void logExport(String folderName, String detail) {
-        log(folderName, "EXPORT", "*", "*", detail);
+        log(folderName, "EXPORT", "*", "*", detail, null);
     }
 
     public static void logImport(String folderName, String detail) {
-        log(folderName, "IMPORT", "*", "*", detail);
+        log(folderName, "IMPORT", "*", "*", detail, null);
+    }
+
+    public static void logImport(String folderName, String detail, String userName) {
+        log(folderName, "IMPORT", "*", "*", detail, userName);
     }
 
     public static void logGenerateKeyPair(String folderName) {

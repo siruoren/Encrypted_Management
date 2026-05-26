@@ -4,15 +4,20 @@ import com.cloudbees.jenkins.plugins.sshcredentials.impl.BasicSSHUserPrivateKey;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.CredentialsStore;
+import com.cloudbees.plugins.credentials.SecretBytes;
+import com.cloudbees.plugins.credentials.common.CertificateCredentials;
 import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.common.UsernamePasswordCredentials;
 import com.cloudbees.plugins.credentials.domains.Domain;
+import com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl;
 import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl;
 import hudson.model.ItemGroup;
 import hudson.util.Secret;
 import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
+import org.jenkinsci.plugins.plaincredentials.FileCredentials;
 import org.jenkinsci.plugins.plaincredentials.StringCredentials;
+import org.jenkinsci.plugins.plaincredentials.impl.FileCredentialsImpl;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 
 import javax.crypto.KeyGenerator;
@@ -83,6 +88,42 @@ public class CredentialBackupService {
                 credObj.put("username", ssh.getUsername());
                 credObj.put("passphrase", Secret.toString(ssh.getPassphrase()));
                 credObj.put("privateKey", ssh.getPrivateKey());
+            } else if (c instanceof FileCredentials) {
+                FileCredentials fc = (FileCredentials) c;
+                credObj.put("type", "SECRET_FILE");
+                credObj.put("fileName", fc.getFileName());
+                try {
+                    java.io.InputStream is = fc.getContent();
+                    if (is != null) {
+                        byte[] fileBytes = is.readAllBytes();
+                        is.close();
+                        credObj.put("fileContent", java.util.Base64.getEncoder().encodeToString(fileBytes));
+                    }
+                } catch (IOException e) {
+                    LOGGER.log(Level.WARNING, "Failed to read file credential content: " + c.getId(), e);
+                    continue;
+                }
+            } else if (c instanceof CertificateCredentials) {
+                CertificateCredentials cc = (CertificateCredentials) c;
+                credObj.put("type", "CERTIFICATE");
+                // 通过 getKeyStoreSource() 获取原始 keystore 字节
+                if (cc instanceof CertificateCredentialsImpl) {
+                    CertificateCredentialsImpl cci = (CertificateCredentialsImpl) cc;
+                    CertificateCredentialsImpl.KeyStoreSource ksSource = cci.getKeyStoreSource();
+                    if (ksSource instanceof CertificateCredentialsImpl.UploadedKeyStoreSource) {
+                        SecretBytes uploadedKeystore = ((CertificateCredentialsImpl.UploadedKeyStoreSource) ksSource).getUploadedKeystore();
+                        if (uploadedKeystore != null) {
+                            credObj.put("keyStoreBytes", java.util.Base64.getEncoder().encodeToString(uploadedKeystore.getPlainData()));
+                        }
+                    } else {
+                        // 其他 KeyStoreSource 类型，通过 getKeyStoreBytes() 获取
+                        byte[] ksBytes = ksSource.getKeyStoreBytes();
+                        if (ksBytes != null && ksBytes.length > 0) {
+                            credObj.put("keyStoreBytes", java.util.Base64.getEncoder().encodeToString(ksBytes));
+                        }
+                    }
+                }
+                credObj.put("keyStorePassword", Secret.toString(cc.getPassword()));
             } else {
                 continue; // 跳过不支持的类型
             }
@@ -212,17 +253,28 @@ public class CredentialBackupService {
      * 根据JSON构建凭据对象
      */
     public static StandardCredentials buildCredential(JSONObject credObj, String type, String id, String description) throws hudson.model.Descriptor.FormException {
+        // 使用导出时的scope，默认GLOBAL
+        CredentialsScope scope = CredentialsScope.GLOBAL;
+        String scopeStr = credObj.optString("scope", null);
+        if (scopeStr != null) {
+            try {
+                scope = CredentialsScope.valueOf(scopeStr);
+            } catch (IllegalArgumentException ignored) {
+                // 降级为GLOBAL
+            }
+        }
+
         switch (type) {
             case "USERNAME_PASSWORD":
                 return new UsernamePasswordCredentialsImpl(
-                        CredentialsScope.GLOBAL,
+                        scope,
                         id,
                         description,
                         credObj.getString("username"),
                         credObj.getString("password"));
             case "SECRET_TEXT":
                 return new StringCredentialsImpl(
-                        CredentialsScope.GLOBAL,
+                        scope,
                         id,
                         description,
                         Secret.fromString(credObj.getString("secret")));
@@ -230,12 +282,31 @@ public class CredentialBackupService {
                 BasicSSHUserPrivateKey.DirectEntryPrivateKeySource source =
                         new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(credObj.getString("privateKey"));
                 return new BasicSSHUserPrivateKey(
-                        CredentialsScope.GLOBAL,
+                        scope,
                         id,
                         credObj.getString("username"),
                         source,
                         credObj.optString("passphrase", ""),
                         description);
+            case "SECRET_FILE":
+                String fileName = credObj.optString("fileName", "secret");
+                String fileContentBase64 = credObj.optString("fileContent", "");
+                byte[] fileBytes = java.util.Base64.getDecoder().decode(fileContentBase64);
+                SecretBytes secretBytes = SecretBytes.fromBytes(fileBytes);
+                return new FileCredentialsImpl(scope, id, description, fileName, secretBytes);
+            case "CERTIFICATE":
+                String keyStoreBase64 = credObj.optString("keyStoreBytes", "");
+                String keyStorePassword = credObj.optString("keyStorePassword", "");
+                byte[] ksBytes = java.util.Base64.getDecoder().decode(keyStoreBase64);
+                CertificateCredentialsImpl.UploadedKeyStoreSource keyStoreSource =
+                        new CertificateCredentialsImpl.UploadedKeyStoreSource(
+                                SecretBytes.fromBytes(ksBytes));
+                return new CertificateCredentialsImpl(
+                        scope,
+                        id,
+                        description,
+                        keyStorePassword,
+                        keyStoreSource);
             default:
                 throw new IllegalArgumentException("Unsupported credential type: " + type);
         }
