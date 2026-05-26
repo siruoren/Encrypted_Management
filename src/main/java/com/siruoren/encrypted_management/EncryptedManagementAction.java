@@ -1047,26 +1047,16 @@ public class EncryptedManagementAction implements Action {
         }
 
         boolean overwrite = "true".equals(overwriteParam);
-
-        // 解析选中的凭据索引
-        java.util.Set<Integer> selectedIndices = null;
-        if (selectedIndicesParam != null && !selectedIndicesParam.isEmpty()) {
-            selectedIndices = new java.util.HashSet<>();
-            for (String idx : selectedIndicesParam.split(",")) {
-                try {
-                    selectedIndices.add(Integer.parseInt(idx.trim()));
-                } catch (NumberFormatException ignored) {}
-            }
-        }
+        java.util.Set<Integer> selectedIndices = ImportService.parseSelectedIndices(selectedIndicesParam);
 
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials(folder, encryptedData, password, overwrite, selectedIndices);
-            AuditLogger.logImport(folder.getFullName(), "imported: " + importResult.toString());
+            ImportResult importResult = ImportService.importFromEncrypted(
+                    folder, encryptedData, password, overwrite, selectedIndices);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "Credentials imported successfully");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (javax.crypto.AEADBadTagException e) {
             return errorResponse("Decryption failed: wrong password or corrupted data");
@@ -1078,8 +1068,6 @@ public class EncryptedManagementAction implements Action {
 
     /**
      * API: 从上传文件导入凭据
-     * 前端使用FileReader读取文件内容后，通过importCredentials API导入
-     * 此API保留作为multipart上传的备选入口
      */
     @RequirePOST
     public HttpResponse doImportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -1099,13 +1087,13 @@ public class EncryptedManagementAction implements Action {
         boolean overwrite = "true".equals(overwriteParam);
 
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials(folder, encryptedData.trim(), password, overwrite);
-            AuditLogger.logImport(folder.getFullName(), "imported from file: " + importResult.toString());
+            ImportResult importResult = ImportService.importFromEncrypted(
+                    folder, encryptedData.trim(), password, overwrite, null);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "Credentials imported successfully from file");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (javax.crypto.AEADBadTagException e) {
             return errorResponse("Decryption failed: wrong password or corrupted data");
@@ -1117,38 +1105,21 @@ public class EncryptedManagementAction implements Action {
 
     /**
      * API: 从外部存储导入凭据
-     * 外部存储JSON格式与CredentialBackupService导出格式一致，可直接导入
      */
     @RequirePOST
     public HttpResponse doImportFromExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
         folder.checkPermission(Item.CONFIGURE);
 
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-        if (!manager.isEnabled()) {
-            return errorResponse("External storage is not enabled");
-        }
-
         String overwriteParam = req.getParameter("overwrite");
         boolean overwrite = "true".equals(overwriteParam);
 
         try {
-            ExternalStorage storage = manager.getStorage();
-            String folderName = folder.getFullName();
-            JSONObject externalData = storage.loadAllCredentials(folderName);
-
-            if (externalData == null) {
-                return errorResponse("No credentials found in external storage for this folder");
-            }
-
-            // 外部存储的JSON格式与CredentialBackupService一致，直接使用importCredentialsFromJson
-            JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
-                    folder, externalData, overwrite);
-            AuditLogger.logImport(folder.getFullName(), "imported from external: " + importResult.toString());
+            ImportResult importResult = ImportService.importFromExternal(folder, overwrite);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "Credentials imported from external storage successfully");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import credentials from external storage", e);

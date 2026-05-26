@@ -436,6 +436,18 @@
                 </div>
             </div>
 
+            <!-- 导入结果弹窗 -->
+            <div id="import-result-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+                <div style="position:relative; max-width:600px; margin:80px auto; background:#fff; border-radius:8px; padding:1.5em; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+                    <h2>${%Import Result}</h2>
+                    <div id="import-result-summary" style="margin:1em 0;"></div>
+                    <div id="import-result-details" style="max-height:300px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; margin:1em 0;"></div>
+                    <div class="jenkins-form-item">
+                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('import-result-dialog');window.location.reload();">${%Close}</button>
+                    </div>
+                </div>
+            </div>
+
             <st:once>
                 <script type="text/javascript">
                 //<![CDATA[
@@ -491,7 +503,13 @@
                         syncFailed: "${%Sync failed}",
                         ok: "OK",
                         error: "${%Error}",
-                        success: "${%Success}"
+                        success: "${%Success}",
+                        importResult: "${%Import Result}",
+                        imported: "${%Imported}",
+                        updated: "${%Updated}",
+                        skipped: "${%Skipped}",
+                        failed: "${%Failed}",
+                        close: "${%Close}"
                     };
 
                     // ==================== 通用弹窗方法 ====================
@@ -515,6 +533,64 @@
 
                     function closeMessageDialog() {
                         document.getElementById('message-dialog').style.display = 'none';
+                    }
+
+                    /**
+                     * 显示导入结果弹窗
+                     * @param {Object} importResult - 后端返回的importResult对象
+                     */
+                    function showImportResultDialog(importResult) {
+                        var summaryDiv = document.getElementById('import-result-summary');
+                        var detailsDiv = document.getElementById('import-result-details');
+
+                        // 汇总统计
+                        var html = '<div style="display:flex; gap:1em; flex-wrap:wrap;">';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#e8f5e9; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#2e7d32;">' + (importResult.imported || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.imported + '</div></div>';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#fff3e0; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#e65100;">' + (importResult.updated || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.updated + '</div></div>';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#e3f2fd; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#1565c0;">' + (importResult.skipped || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.skipped + '</div></div>';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#ffebee; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#c62828;">' + (importResult.failed || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.failed + '</div></div>';
+                        html += '</div>';
+                        summaryDiv.innerHTML = html;
+
+                        // 详细列表
+                        var items = importResult.items || [];
+                        if (items.length > 0) {
+                            var tableHtml = '<table style="width:100%; border-collapse:collapse; font-size:0.85em;">';
+                            tableHtml += '<thead><tr style="background:#f5f5f5;">';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">ID</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.description + '</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.kind + '</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:center; border-bottom:1px solid #ddd;">' + i18n.importResult + '</th>';
+                            tableHtml += '</tr></thead><tbody>';
+                            for (var i = 0; i < items.length; i++) {
+                                var item = items[i];
+                                var statusColor = '#2e7d32';
+                                var statusText = i18n.imported;
+                                if (item.status === 'UPDATED') { statusColor = '#e65100'; statusText = i18n.updated; }
+                                else if (item.status === 'SKIPPED') { statusColor = '#1565c0'; statusText = i18n.skipped; }
+                                else if (item.status === 'FAILED') { statusColor = '#c62828'; statusText = i18n.failed; }
+                                tableHtml += '<tr>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.id || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.description || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.type || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee; text-align:center; color:' + statusColor + '; font-weight:bold;">' + statusText + '</td>';
+                                tableHtml += '</tr>';
+                            }
+                            tableHtml += '</tbody></table>';
+                            detailsDiv.innerHTML = tableHtml;
+                        } else {
+                            detailsDiv.innerHTML = '';
+                        }
+
+                        document.getElementById('import-result-dialog').style.display = '';
                     }
 
                     function secureFetch(url, options) {
@@ -1312,9 +1388,7 @@
                         .then(function(data) {
                             if (data.success) {
                                 closeDialog('import-dialog');
-                                var r = data.importResult;
-                                showMessage(i18n.importSuccess + ' (imported: ' + r.imported + ', updated: ' + r.updated + ', skipped: ' + r.skipped + ', failed: ' + r.failed + ')', 'success');
-                                setTimeout(function() { window.location.reload(); }, 2000);
+                                showImportResultDialog(data.importResult);
                             } else {
                                 showMessage(data.message || i18n.importFailed, 'error');
                             }
@@ -1606,8 +1680,7 @@
                         .then(function(data) {
                             if (data.success) {
                                 closeDialog('import-all-zip-dialog');
-                                showMessage(data.message, 'success');
-                                setTimeout(function() { window.location.reload(); }, 2000);
+                                showImportResultDialog(data.importResult);
                             } else {
                                 showMessage(data.message || i18n.importFailed, 'error');
                             }

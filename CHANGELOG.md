@@ -17,6 +17,12 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 
 - **文件夹凭据管理凭据选择**：目录任务下的凭据导出/导入弹窗同样支持凭据选择和两步导入流程
 
+- **导入速度优化与线程管理**：新增 `ImportService` 统一导入服务，使用线程池并发导入提升批量导入速度；ZIP 全量导入时各条目并行处理；使用 daemon 线程防止内存泄露
+
+- **导入结果详细展示**：所有导入操作完成后弹出结果统计弹窗，展示新增、覆盖、跳过、失败四种状态的数量和详细列表
+
+- **代码架构优化**：导入逻辑从 Action 层解耦到 `ImportService`，便于后期维护和扩展
+
 ## [1.0.1] - 2026-05-25
 
 ### Added

@@ -219,7 +219,7 @@ public class CredentialBackupService {
     /**
      * 根据JSON构建凭据对象
      */
-    private static StandardCredentials buildCredential(JSONObject credObj, String type, String id, String description) throws hudson.model.Descriptor.FormException {
+    public static StandardCredentials buildCredential(JSONObject credObj, String type, String id, String description) throws hudson.model.Descriptor.FormException {
         switch (type) {
             case "USERNAME_PASSWORD":
                 return new UsernamePasswordCredentialsImpl(

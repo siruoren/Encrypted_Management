@@ -669,30 +669,16 @@ public class SystemCredentialsAction implements RootAction {
         }
 
         boolean overwrite = "true".equals(overwriteParam);
-
-        // 解析选中的凭据索引
-        java.util.Set<Integer> selectedIndices = null;
-        if (selectedIndicesParam != null && !selectedIndicesParam.isEmpty()) {
-            selectedIndices = new java.util.HashSet<>();
-            for (String idx : selectedIndicesParam.split(",")) {
-                try {
-                    selectedIndices.add(Integer.parseInt(idx.trim()));
-                } catch (NumberFormatException ignored) {}
-            }
-        }
+        java.util.Set<Integer> selectedIndices = ImportService.parseSelectedIndices(selectedIndicesParam);
 
         try {
-            // 先解密获取JSON，再按选中索引导入
-            String plainJson = CredentialBackupService.decryptData(encryptedData, password);
-            JSONObject importObj = JSONObject.fromObject(plainJson);
-            JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
-                    (ItemGroup<?>) getJenkinsInstance(), importObj, overwrite, selectedIndices);
-            AuditLogger.logImport("system", "imported: " + importResult.toString());
+            ImportResult importResult = ImportService.importFromEncrypted(
+                    getJenkinsInstance(), encryptedData, password, overwrite, selectedIndices);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "Credentials imported successfully");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (javax.crypto.AEADBadTagException e) {
             return errorResponse("Decryption failed: wrong password or corrupted data");
@@ -777,13 +763,13 @@ public class SystemCredentialsAction implements RootAction {
         boolean overwrite = "true".equals(overwriteParam);
 
         try {
-            JSONObject importResult = CredentialBackupService.importCredentials((ItemGroup<?>) getJenkinsInstance(), encryptedData.trim(), password, overwrite);
-            AuditLogger.logImport("system", "imported from file: " + importResult.toString());
+            ImportResult importResult = ImportService.importFromEncrypted(
+                    getJenkinsInstance(), encryptedData.trim(), password, overwrite, null);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "Credentials imported successfully from file");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (javax.crypto.AEADBadTagException e) {
             return errorResponse("Decryption failed: wrong password or corrupted data");
@@ -795,36 +781,21 @@ public class SystemCredentialsAction implements RootAction {
 
     /**
      * API: 从外部存储导入系统级凭据
-     * 外部存储JSON格式与CredentialBackupService导出格式一致，可直接导入
      */
     @RequirePOST
     public HttpResponse doImportFromExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
         getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-        if (!manager.isEnabled()) {
-            return errorResponse("External storage is not enabled");
-        }
-
         String overwriteParam = req.getParameter("overwrite");
         boolean overwrite = "true".equals(overwriteParam);
 
         try {
-            ExternalStorage storage = manager.getStorage();
-            JSONObject externalData = storage.loadAllCredentials("system");
-
-            if (externalData == null) {
-                return errorResponse("No credentials found in external storage for system level");
-            }
-
-            JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
-                    getJenkinsInstance(), externalData, overwrite);
-            AuditLogger.logImport("system", "imported from external: " + importResult.toString());
+            ImportResult importResult = ImportService.importFromExternal(getJenkinsInstance(), overwrite);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "System credentials imported from external storage successfully");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Failed to import system credentials from external storage", e);
@@ -1146,8 +1117,7 @@ public class SystemCredentialsAction implements RootAction {
     }
 
     /**
-     * API: 从加密ZIP包导入所有目录任务的凭据
-     * ZIP包结构与Jenkins目录任务路径保持一致
+     * API: 从加密ZIP包导入所有目录任务的凭据（并发导入）
      */
     @RequirePOST
     public HttpResponse doImportAllFromZip(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -1166,109 +1136,15 @@ public class SystemCredentialsAction implements RootAction {
         }
 
         boolean overwrite = "true".equals(overwriteParam);
-
-        // 解析选中的条目集合，格式为 "folderEntry:index"（如 "dev/team.enc:0,jenkins_root.enc:1"）
-        java.util.Set<String> selectedEntries = null;
-        if (selectedEntriesParam != null && !selectedEntriesParam.isEmpty()) {
-            selectedEntries = new java.util.HashSet<>(java.util.Arrays.asList(selectedEntriesParam.split(",")));
-        }
+        java.util.Set<String> selectedEntries = ImportService.parseSelectedEntries(selectedEntriesParam);
 
         try {
-            // 前端通过FileReader读取ZIP文件并Base64编码
-            byte[] zipBytes = java.util.Base64.getDecoder().decode(encryptedZipData);
-            java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(zipBytes);
-
-            int totalImported = 0;
-            int totalUpdated = 0;
-            int totalSkipped = 0;
-            int totalFailed = 0;
-            java.util.List<String> processedFolders = new java.util.ArrayList<>();
-
-            try (ZipInputStream zis = new ZipInputStream(bais)) {
-                ZipEntry entry;
-                while ((entry = zis.getNextEntry()) != null) {
-                    try {
-                        // 读取ZIP条目内容
-                        java.io.ByteArrayOutputStream entryBaos = new java.io.ByteArrayOutputStream();
-                        byte[] buffer = new byte[4096];
-                        int len;
-                        while ((len = zis.read(buffer)) > 0) {
-                            entryBaos.write(buffer, 0, len);
-                        }
-                        String encryptedContent = entryBaos.toString(java.nio.charset.StandardCharsets.UTF_8.name());
-
-                        // 解密
-                        String decryptedJson = CredentialBackupService.decryptData(encryptedContent, password);
-                        JSONObject importObj = JSONObject.fromObject(decryptedJson);
-
-                        // 确定目标ItemGroup
-                        String entryPath = entry.getName();
-                        ItemGroup<?> targetItemGroup;
-                        if ("jenkins_root.enc".equals(entryPath)) {
-                            targetItemGroup = getJenkinsInstance();
-                        } else {
-                            // 从路径提取folderName: "test/test.enc" → "test", "dev/team/team.enc" → "dev/team"
-                            String folderFullName;
-                            int lastSlash = entryPath.lastIndexOf('/');
-                            if (lastSlash > 0) {
-                                folderFullName = entryPath.substring(0, lastSlash);
-                            } else {
-                                // 兼容旧格式: "test.enc" → "test"
-                                folderFullName = entryPath;
-                                if (folderFullName.endsWith(".enc")) {
-                                    folderFullName = folderFullName.substring(0, folderFullName.length() - 4);
-                                }
-                            }
-                            targetItemGroup = findFolderByFullName(folderFullName);
-                            if (targetItemGroup == null) {
-                                LOGGER.warning("Folder not found for ZIP entry: " + entryPath + ", skipping");
-                                totalFailed++;
-                                continue;
-                            }
-                        }
-
-                        // 计算该条目中选中的凭据索引
-                        java.util.Set<Integer> selectedIndices = null;
-                        if (selectedEntries != null) {
-                            selectedIndices = new java.util.HashSet<>();
-                            for (String sel : selectedEntries) {
-                                if (sel.startsWith(entryPath + ":")) {
-                                    try {
-                                        selectedIndices.add(Integer.parseInt(sel.substring(entryPath.length() + 1)));
-                                    } catch (NumberFormatException ignored) {}
-                                }
-                            }
-                        }
-
-                        // 导入凭据
-                        JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
-                                targetItemGroup, importObj, overwrite, selectedIndices);
-                        totalImported += importResult.optInt("imported", 0);
-                        totalUpdated += importResult.optInt("updated", 0);
-                        totalSkipped += importResult.optInt("skipped", 0);
-                        totalFailed += importResult.optInt("failed", 0);
-                        processedFolders.add(entryPath);
-                    } catch (Exception e) {
-                        LOGGER.log(Level.WARNING, "Failed to import ZIP entry: " + entry.getName(), e);
-                        totalFailed++;
-                    }
-                    zis.closeEntry();
-                }
-            }
-
-            AuditLogger.log("system", "IMPORT_ALL_ZIP", "*", "*",
-                    "imported from ZIP: " + processedFolders.size() + " folders, imported=" + totalImported
-                            + ", updated=" + totalUpdated + ", skipped=" + totalSkipped + ", failed=" + totalFailed);
+            ImportResult importResult = ImportService.importFromZip(encryptedZipData, password, overwrite, selectedEntries);
 
             JSONObject result = new JSONObject();
             result.put("success", true);
-            result.put("folderCount", processedFolders.size());
-            result.put("imported", totalImported);
-            result.put("updated", totalUpdated);
-            result.put("skipped", totalSkipped);
-            result.put("failed", totalFailed);
-            result.put("folders", processedFolders);
-            result.put("message", "Import completed: " + totalImported + " imported, " + totalUpdated + " updated, " + totalSkipped + " skipped, " + totalFailed + " failed");
+            result.put("importResult", importResult.toJson());
+            result.put("message", importResult.getSummaryMessage());
             return jsonResult(result);
         } catch (Exception e) {
             if (e.getCause() instanceof javax.crypto.AEADBadTagException) {
@@ -1355,17 +1231,8 @@ public class SystemCredentialsAction implements RootAction {
     }
 
     /**
-     * 根据fullName查找Folder对象
+     * 获取凭据类型名称
      */
-    private Folder findFolderByFullName(String fullName) {
-        for (Folder folder : Jenkins.get().getAllItems(Folder.class)) {
-            if (folder.getFullName().equals(fullName)) {
-                return folder;
-            }
-        }
-        return null;
-    }
-
     private String getCredentialsTypeName(StandardCredentials c) {
         if (c instanceof UsernamePasswordCredentials) {
             return "Username with password";
