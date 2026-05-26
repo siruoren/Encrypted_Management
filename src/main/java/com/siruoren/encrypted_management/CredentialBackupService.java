@@ -359,12 +359,43 @@ public class CredentialBackupService {
 
     /**
      * PBKDF2从密码派生AES-256密钥
+     * 安全增强：混合Jenkins master.key作为额外熵源，防止离线暴力破解
      */
     private static SecretKey deriveKey(String password, byte[] salt) throws Exception {
+        // 尝试读取Jenkins master.key作为额外熵源
+        byte[] masterKeyBytes = getJenkinsMasterKeyBytes();
+        byte[] combinedSalt = salt;
+        if (masterKeyBytes != null && masterKeyBytes.length > 0) {
+            // 将master.key混入salt，增加离线破解难度
+            combinedSalt = new byte[salt.length + Math.min(masterKeyBytes.length, 32)];
+            System.arraycopy(salt, 0, combinedSalt, 0, salt.length);
+            System.arraycopy(masterKeyBytes, 0, combinedSalt, salt.length,
+                    Math.min(masterKeyBytes.length, 32));
+        }
+
         javax.crypto.SecretKeyFactory factory = javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
         javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
-                password.toCharArray(), salt, 65536, AES_KEY_LENGTH);
+                password.toCharArray(), combinedSalt, 65536, AES_KEY_LENGTH);
         byte[] keyBytes = factory.generateSecret(spec).getEncoded();
+        // 擦除密码字符数组
+        spec.clearPassword();
         return new SecretKeySpec(keyBytes, "AES");
+    }
+
+    /**
+     * 读取Jenkins master.key字节作为额外熵源
+     * 如果读取失败则返回null（降级为仅密码模式，兼容无master.key环境）
+     */
+    private static byte[] getJenkinsMasterKeyBytes() {
+        try {
+            java.io.File masterKeyFile = new java.io.File(
+                    jenkins.model.Jenkins.get().getRootDir(), "secrets/master.key");
+            if (masterKeyFile.exists() && masterKeyFile.canRead()) {
+                return java.nio.file.Files.readAllBytes(masterKeyFile.toPath());
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.FINE, "Could not read Jenkins master.key for key derivation", e);
+        }
+        return null;
     }
 }

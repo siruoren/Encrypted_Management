@@ -2,7 +2,7 @@
 
 All notable changes to the Encrypted Management plugin will be documented in this file.
 
-## [1.0.1-SNAPSHOT] - UNRELEASED
+## [1.0.1-SNAPSHOT] - 2026-05-26
 
 ### Added
 
@@ -22,6 +22,24 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 - **导入结果详细展示**：所有导入操作完成后弹出结果统计弹窗，展示新增、覆盖、跳过、失败四种状态的数量和详细列表
 
 - **代码架构优化**：导入逻辑从 Action 层解耦到 `ImportService`，便于后期维护和扩展
+
+### Security
+
+- **权限模型增强**：解密、导出、同步等敏感操作升级为 `Jenkins.ADMINISTER` 权限，防止低权限用户获取明文凭据
+
+- **Zip Slip 漏洞修复**：对 ZIP 条目路径进行规范化检查，拒绝包含 `..` 或绝对路径的恶意条目
+
+- **密码安全管理**：外部存储密码从 `String` 改为 `char[]`，使用后及时用 `Arrays.fill()` 擦除，防止 Heap Dump 泄露
+
+- **加密密钥与 Jenkins master.key 绑定**：PBKDF2 密钥派生混入 Jenkins master.key，防止导出文件被离线暴力破解
+
+- **JSON Schema 验证**：新增凭据类型白名单、字段白名单和长度校验，防止反序列化攻击和数据污染
+
+- **审计日志脱敏**：credentialId 和 folder 使用 SHA-256 哈希摘要记录，避免泄露内部系统命名
+
+- **导入限流**：ZIP 文件大小限制 20MB，单次导入凭据数量限制 1000 条
+
+- **线程池生命周期管理**：使用 `@Terminator` 在 Jenkins 关闭时优雅关闭所有线程池，防止 ClassLoader 泄露
 
 ## [1.0.1] - 2026-05-25
 

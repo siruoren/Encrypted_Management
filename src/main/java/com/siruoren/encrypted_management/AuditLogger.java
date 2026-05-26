@@ -90,12 +90,20 @@ public class AuditLogger {
     /**
      * 记录审计日志（异步非阻塞）
      * 使用单线程Executor顺序写入，避免并发冲突和阻塞调用线程
+     *
+     * 安全措施：
+     * - credentialId 使用哈希摘要，避免直接记录原始ID泄露内部命名
+     * - folder 使用哈希摘要，避免泄露Git仓库、生产环境等命名
+     * - 绝对禁止记录任何凭据的明文值
      */
     public static void log(String folderName, String action, String credentialId, String credentialType, String detail) {
         String user = getCurrentUser();
         String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        // 脱敏：对credentialId和folder进行哈希处理
+        String safeCredId = credentialId != null ? hashForAudit(credentialId) : "*";
+        String safeFolder = folderName != null ? hashForAudit(folderName) : "*";
         String logLine = String.format("[%s] user=%s folder=%s action=%s credentialId=%s type=%s detail=%s",
-                timestamp, user, folderName, action, credentialId, credentialType, detail != null ? detail : "");
+                timestamp, user, safeFolder, action, safeCredId, credentialType, detail != null ? detail : "");
 
         // 异步写入文件，不阻塞调用线程
         logWriter.submit(new LogWriteTask(logLine));
@@ -175,6 +183,26 @@ public class AuditLogger {
     }
 
     /**
+     * 审计日志脱敏哈希：对敏感标识符进行SHA-256摘要
+     * 返回前8位十六进制，足以区分不同对象但无法逆推原始值
+     */
+    private static String hashForAudit(String input) {
+        if (input == null || input.isEmpty()) return "*";
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 4 && i < hash.length; i++) {
+                sb.append(String.format("%02x", hash[i]));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 必定可用，此处仅为编译器要求
+            return "****";
+        }
+    }
+
+    /**
      * 读取审计日志（最近N条）
      * 读取文件快照，不阻塞写入线程
      */
@@ -241,5 +269,21 @@ public class AuditLogger {
             }
         }
         return deleted;
+    }
+
+    /**
+     * 优雅关闭审计日志线程池（由ThreadPoolManager.shutdown()调用）
+     */
+    public static void shutdown() {
+        if (logWriter != null && !logWriter.isShutdown()) {
+            logWriter.shutdown();
+            try {
+                logWriter.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+                LOGGER.info("Audit logger thread pool shut down complete");
+            } catch (InterruptedException e) {
+                logWriter.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }

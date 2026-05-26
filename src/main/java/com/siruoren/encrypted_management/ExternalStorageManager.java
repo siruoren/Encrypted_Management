@@ -3,6 +3,7 @@ package com.siruoren.encrypted_management;
 import net.sf.json.JSONObject;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -26,7 +27,7 @@ public class ExternalStorageManager {
     private volatile boolean enabled = false;
     private volatile SyncMode syncMode = SyncMode.MANUAL;
     private volatile String storagePath;
-    private volatile String encryptionPassword;
+    private volatile char[] encryptionPassword;
 
     // 读写锁：保护配置的原子性变更（如setStoragePath需要同时更新storage和password）
     private final ReentrantReadWriteLock configLock = new ReentrantReadWriteLock();
@@ -100,7 +101,7 @@ public class ExternalStorageManager {
                 FileExternalStorage newStorage = new FileExternalStorage(storagePath);
                 // 保留加密密码
                 if (this.encryptionPassword != null) {
-                    newStorage.setEncryptionPassword(this.encryptionPassword);
+                    newStorage.setEncryptionPassword(new String(this.encryptionPassword));
                 }
                 this.storage = newStorage;
             }
@@ -109,14 +110,41 @@ public class ExternalStorageManager {
         }
     }
 
+    /**
+     * 获取加密密码（返回副本，用后需及时擦除）
+     */
+    public char[] getEncryptionPasswordChars() {
+        configLock.readLock().lock();
+        try {
+            if (encryptionPassword == null) return null;
+            return encryptionPassword.clone();
+        } finally {
+            configLock.readLock().unlock();
+        }
+    }
+
+    /**
+     * @deprecated 使用 getEncryptionPasswordChars() 替代，避免String驻留
+     */
+    @Deprecated
     public String getEncryptionPassword() {
-        return encryptionPassword;
+        char[] chars = getEncryptionPasswordChars();
+        if (chars == null) return null;
+        try {
+            return new String(chars);
+        } finally {
+            Arrays.fill(chars, '\0');
+        }
     }
 
     public void setEncryptionPassword(String password) {
         configLock.writeLock().lock();
         try {
-            this.encryptionPassword = password;
+            // 擦除旧密码
+            if (this.encryptionPassword != null) {
+                Arrays.fill(this.encryptionPassword, '\0');
+            }
+            this.encryptionPassword = password != null ? password.toCharArray() : null;
             this.storage.setEncryptionPassword(password);
         } finally {
             configLock.writeLock().unlock();
@@ -148,7 +176,7 @@ public class ExternalStorageManager {
             status.put("enabled", enabled);
             status.put("syncMode", syncMode.name());
             status.put("storagePath", storagePath != null ? storagePath : "");
-            status.put("encrypted", encryptionPassword != null && !encryptionPassword.isEmpty());
+            status.put("encrypted", encryptionPassword != null && encryptionPassword.length > 0);
             if (storage != null) {
                 status.put("storageType", storage.getType());
                 status.put("configInfo", storage.getConfigInfo());

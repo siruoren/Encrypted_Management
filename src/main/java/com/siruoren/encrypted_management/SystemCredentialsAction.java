@@ -109,56 +109,13 @@ public class SystemCredentialsAction implements RootAction {
     }
 
     /**
-     * 获取Jenkins系统凭据存储
-     */
-    private CredentialsStore getSystemStore() {
-        for (CredentialsStore store : CredentialsProvider.lookupStores(getJenkinsInstance())) {
-            if (store.getContext() == getJenkinsInstance()) {
-                return store;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 根据ID查找系统凭据
-     */
-    private StandardCredentials findCredentialById(String id) {
-        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList());
-        for (StandardCredentials c : creds) {
-            if (c.getId().equals(id)) {
-                return c;
-            }
-        }
-        return null;
-    }
-
-    /**
      * API: 以JSON格式返回系统级所有凭据
      */
     public HttpResponse doListCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
         getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
 
-        JSONArray arr = new JSONArray();
-        List<StandardCredentials> creds = CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList());
-
-        for (StandardCredentials c : creds) {
-            JSONObject obj = new JSONObject();
-            obj.put("id", c.getId());
-            obj.put("description", c.getDescription() != null ? c.getDescription() : "");
-            obj.put("type", getCredentialsTypeName(c));
-            obj.put("typeKey", getCredentialsTypeKey(c));
-
-            if (c instanceof UsernamePasswordCredentials) {
-                obj.put("username", ((UsernamePasswordCredentials) c).getUsername());
-            } else if (c instanceof BasicSSHUserPrivateKey) {
-                obj.put("username", ((BasicSSHUserPrivateKey) c).getUsername());
-            }
-
-            arr.add(obj);
-        }
+        JSONArray arr = CredentialService.listCredentialsJson(getJenkinsInstance());
+        List<StandardCredentials> creds = CredentialService.getStoreCredentials(getJenkinsInstance());
 
         JSONObject result = new JSONObject();
         result.put("success", true);
@@ -181,36 +138,15 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Credential ID is required");
         }
 
-        StandardCredentials c = findCredentialById(id);
-        if (c == null) {
-            return errorResponse("Credential not found: " + id);
+        try {
+            JSONObject result = CredentialService.decryptCredentialJson(getJenkinsInstance(), id);
+            result.put("success", true);
+            AuditLogger.logRead("system", id, CredentialService.getCredentialsTypeKey(
+                    CredentialService.findCredentialById(getJenkinsInstance(), id)));
+            return jsonResult(result);
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         }
-
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("id", id);
-        result.put("type", getCredentialsTypeName(c));
-        result.put("typeKey", getCredentialsTypeKey(c));
-
-        if (c instanceof UsernamePasswordCredentials) {
-            UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
-            result.put("username", upc.getUsername());
-            result.put("password", Secret.toString(upc.getPassword()));
-        } else if (c instanceof StringCredentials) {
-            result.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
-        } else if (c instanceof BasicSSHUserPrivateKey) {
-            BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
-            result.put("username", ssh.getUsername());
-            result.put("passphrase", Secret.toString(ssh.getPassphrase()));
-            result.put("privateKey", ssh.getPrivateKey());
-            String publicKey = EncryptedManagementAction.derivePublicKey(ssh.getPrivateKey(), ssh.getPassphrase());
-            if (publicKey != null && !publicKey.isEmpty()) {
-                result.put("publicKey", publicKey);
-            }
-        }
-
-        AuditLogger.logRead("system", id, getCredentialsTypeKey(c));
-        return jsonResult(result);
     }
 
     /**
@@ -224,28 +160,15 @@ public class SystemCredentialsAction implements RootAction {
         String description = req.getParameter("description");
         String secret = req.getParameter("secret");
 
-        if (secret == null || secret.trim().isEmpty()) {
-            return errorResponse("Secret value is required");
-        }
-
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            StringCredentialsImpl credential = new StringCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    (id != null && !id.isEmpty()) ? id : null,
-                    description,
-                    Secret.fromString(secret));
-
-            store.addCredentials(Domain.global(), credential);
+            StringCredentialsImpl credential = CredentialService.createSecretText(
+                    getJenkinsInstance(), id, description, secret, true);
             AuditLogger.logCreate("system", credential.getId(), "SECRET_TEXT");
             return successResponse("Secret text credential created successfully");
+        } catch (CredentialService.ValidationException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create secret text credential", e);
-            return errorResponse("Failed to create credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("create secret text credential", e));
         }
     }
 
@@ -261,32 +184,15 @@ public class SystemCredentialsAction implements RootAction {
         String username = req.getParameter("username");
         String password = req.getParameter("password");
 
-        if (username == null || username.trim().isEmpty()) {
-            return errorResponse("Username is required");
-        }
-        if (password == null || password.trim().isEmpty()) {
-            return errorResponse("Password is required");
-        }
-
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            UsernamePasswordCredentialsImpl credential = new UsernamePasswordCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    (id != null && !id.isEmpty()) ? id : null,
-                    description,
-                    username,
-                    password);
-
-            store.addCredentials(Domain.global(), credential);
+            UsernamePasswordCredentialsImpl credential = CredentialService.createUsernamePassword(
+                    getJenkinsInstance(), id, description, username, password, true);
             AuditLogger.logCreate("system", credential.getId(), "USERNAME_PASSWORD");
             return successResponse("Username/Password credential created successfully");
+        } catch (CredentialService.ValidationException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create username/password credential", e);
-            return errorResponse("Failed to create credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("create username/password credential", e));
         }
     }
 
@@ -303,36 +209,15 @@ public class SystemCredentialsAction implements RootAction {
         String passphrase = req.getParameter("passphrase");
         String privateKey = req.getParameter("privateKey");
 
-        if (username == null || username.trim().isEmpty()) {
-            return errorResponse("Username is required");
-        }
-        if (privateKey == null || privateKey.trim().isEmpty()) {
-            return errorResponse("Private key is required");
-        }
-
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            BasicSSHUserPrivateKey.DirectEntryPrivateKeySource source =
-                    new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(privateKey);
-
-            BasicSSHUserPrivateKey credential = new BasicSSHUserPrivateKey(
-                    CredentialsScope.GLOBAL,
-                    (id != null && !id.isEmpty()) ? id : null,
-                    username,
-                    source,
-                    passphrase != null ? passphrase : "",
-                    description);
-
-            store.addCredentials(Domain.global(), credential);
+            BasicSSHUserPrivateKey credential = CredentialService.createSSHKey(
+                    getJenkinsInstance(), id, description, username, passphrase, privateKey, true);
             AuditLogger.logCreate("system", credential.getId(), "SSH_KEY");
             return successResponse("SSH credential created successfully");
+        } catch (CredentialService.ValidationException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create SSH credential", e);
-            return errorResponse("Failed to create credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("create SSH credential", e));
         }
     }
 
@@ -351,32 +236,14 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            StandardCredentials existing = findCredentialById(id);
-            if (existing == null) {
-                return errorResponse("Credential not found: " + id);
-            }
-            if (!(existing instanceof StringCredentials)) {
-                return errorResponse("Credential is not a Secret Text type");
-            }
-
-            StringCredentialsImpl updated = new StringCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    id,
-                    description != null ? description : existing.getDescription(),
-                    Secret.fromString(secret != null ? secret : Secret.toString(((StringCredentials) existing).getSecret())));
-
-            store.updateCredentials(Domain.global(), existing, updated);
+            CredentialService.updateSecretText(getJenkinsInstance(), id, description, secret);
             AuditLogger.logUpdate("system", id, "SECRET_TEXT");
             return successResponse("Secret text credential updated successfully");
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to update secret text credential", e);
-            return errorResponse("Failed to update credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("update secret text credential", e));
         }
     }
 
@@ -396,34 +263,14 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            StandardCredentials existing = findCredentialById(id);
-            if (existing == null) {
-                return errorResponse("Credential not found: " + id);
-            }
-            if (!(existing instanceof UsernamePasswordCredentials)) {
-                return errorResponse("Credential is not a Username/Password type");
-            }
-
-            UsernamePasswordCredentials oldCred = (UsernamePasswordCredentials) existing;
-            UsernamePasswordCredentialsImpl updated = new UsernamePasswordCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    id,
-                    description != null ? description : existing.getDescription(),
-                    username != null ? username : oldCred.getUsername(),
-                    password != null ? password : Secret.toString(oldCred.getPassword()));
-
-            store.updateCredentials(Domain.global(), existing, updated);
+            CredentialService.updateUsernamePassword(getJenkinsInstance(), id, description, username, password);
             AuditLogger.logUpdate("system", id, "USERNAME_PASSWORD");
             return successResponse("Username/Password credential updated successfully");
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to update username/password credential", e);
-            return errorResponse("Failed to update credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("update username/password credential", e));
         }
     }
 
@@ -444,38 +291,14 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            StandardCredentials existing = findCredentialById(id);
-            if (existing == null) {
-                return errorResponse("Credential not found: " + id);
-            }
-            if (!(existing instanceof BasicSSHUserPrivateKey)) {
-                return errorResponse("Credential is not an SSH Key type");
-            }
-
-            BasicSSHUserPrivateKey oldCred = (BasicSSHUserPrivateKey) existing;
-            String resolvedPrivateKey = privateKey != null && !privateKey.isEmpty() ? privateKey : oldCred.getPrivateKey();
-            BasicSSHUserPrivateKey.DirectEntryPrivateKeySource newSource =
-                    new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(resolvedPrivateKey);
-            BasicSSHUserPrivateKey updated = new BasicSSHUserPrivateKey(
-                    CredentialsScope.GLOBAL,
-                    id,
-                    username != null ? username : oldCred.getUsername(),
-                    newSource,
-                    passphrase != null ? passphrase : Secret.toString(oldCred.getPassphrase()),
-                    description != null ? description : existing.getDescription());
-
-            store.updateCredentials(Domain.global(), existing, updated);
+            CredentialService.updateSSHKey(getJenkinsInstance(), id, description, username, passphrase, privateKey);
             AuditLogger.logUpdate("system", id, "SSH_KEY");
             return successResponse("SSH credential updated successfully");
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to update SSH credential", e);
-            return errorResponse("Failed to update credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("update SSH credential", e));
         }
     }
 
@@ -491,27 +314,22 @@ public class SystemCredentialsAction implements RootAction {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getSystemStore();
-        if (store == null) {
-            return errorResponse("No system credentials store found");
-        }
-
         try {
-            StandardCredentials c = findCredentialById(id);
+            StandardCredentials c = CredentialService.findCredentialById(getJenkinsInstance(), id);
             if (c == null) {
                 return errorResponse("Credential not found: " + id);
             }
-
-            boolean removed = store.removeCredentials(Domain.global(), c);
+            boolean removed = CredentialService.deleteCredential(getJenkinsInstance(), id);
             if (removed) {
-                AuditLogger.logDelete("system", id, getCredentialsTypeKey(c));
+                AuditLogger.logDelete("system", id, CredentialService.getCredentialsTypeKey(c));
                 return successResponse("Credential deleted successfully");
             } else {
                 return errorResponse("Failed to remove credential from store");
             }
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to delete credential", e);
-            return errorResponse("Failed to delete credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("delete credential", e));
         }
     }
 
@@ -521,8 +339,7 @@ public class SystemCredentialsAction implements RootAction {
     @RequirePOST
     public HttpResponse doGenerateKeyPair(StaplerRequest req, StaplerResponse rsp) throws IOException {
         getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
-        // 复用EncryptedManagementAction的密钥生成逻辑
-        return EncryptedManagementAction.doGenerateKeyPairStatic(req.getParameter("passphrase"), "system");
+        return CryptoService.generateKeyPair(req.getParameter("passphrase"), "system");
     }
 
     // ==================== 审计日志 API ====================
@@ -1047,6 +864,14 @@ public class SystemCredentialsAction implements RootAction {
                 ZipEntry entry;
                 while ((entry = zis.getNextEntry()) != null) {
                     try {
+                        // Zip Slip 防护：检查路径遍历攻击
+                        String entryName = entry.getName();
+                        if (entryName.contains("..") || entryName.startsWith("/") || entryName.startsWith("\\")) {
+                            LOGGER.warning("Skipping ZIP entry with suspicious path: " + entryName);
+                            zis.closeEntry();
+                            continue;
+                        }
+
                         java.io.ByteArrayOutputStream entryBaos = new java.io.ByteArrayOutputStream();
                         byte[] buffer = new byte[4096];
                         int len;
@@ -1213,7 +1038,7 @@ public class SystemCredentialsAction implements RootAction {
         credData.put("id", c.getId());
         credData.put("description", c.getDescription());
         credData.put("scope", c.getScope().name());
-        credData.put("type", getCredentialsTypeKey(c));
+        credData.put("type", CredentialService.getCredentialsTypeKey(c));
 
         if (c instanceof UsernamePasswordCredentials) {
             UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
@@ -1228,31 +1053,6 @@ public class SystemCredentialsAction implements RootAction {
             credData.put("privateKey", ssh.getPrivateKey());
         }
         return credData;
-    }
-
-    /**
-     * 获取凭据类型名称
-     */
-    private String getCredentialsTypeName(StandardCredentials c) {
-        if (c instanceof UsernamePasswordCredentials) {
-            return "Username with password";
-        } else if (c instanceof BasicSSHUserPrivateKey) {
-            return "SSH Username with private key";
-        } else if (c instanceof StringCredentials) {
-            return "Secret text";
-        }
-        return c.getClass().getSimpleName();
-    }
-
-    private String getCredentialsTypeKey(StandardCredentials c) {
-        if (c instanceof UsernamePasswordCredentials) {
-            return "USERNAME_PASSWORD";
-        } else if (c instanceof BasicSSHUserPrivateKey) {
-            return "SSH_KEY";
-        } else if (c instanceof StringCredentials) {
-            return "SECRET_TEXT";
-        }
-        return "OTHER";
     }
 
     private HttpResponse jsonResult(JSONObject json) {

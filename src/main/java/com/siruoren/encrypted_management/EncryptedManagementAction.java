@@ -152,24 +152,8 @@ public class EncryptedManagementAction implements Action {
     public HttpResponse doListCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
         folder.checkPermission(Item.CONFIGURE);
 
-        JSONArray arr = new JSONArray();
-        List<StandardCredentials> creds = getFolderCredentials();
-
-        for (StandardCredentials c : creds) {
-            JSONObject obj = new JSONObject();
-            obj.put("id", c.getId());
-            obj.put("description", c.getDescription() != null ? c.getDescription() : "");
-            obj.put("type", getCredentialsTypeName(c));
-            obj.put("typeKey", getCredentialsTypeKey(c));
-
-            if (c instanceof UsernamePasswordCredentials) {
-                obj.put("username", ((UsernamePasswordCredentials) c).getUsername());
-            } else if (c instanceof BasicSSHUserPrivateKey) {
-                obj.put("username", ((BasicSSHUserPrivateKey) c).getUsername());
-            }
-
-            arr.add(obj);
-        }
+        JSONArray arr = CredentialService.listCredentialsJson(folder);
+        List<StandardCredentials> creds = CredentialService.getStoreCredentials(folder);
 
         JSONObject result = new JSONObject();
         result.put("success", true);
@@ -185,44 +169,23 @@ public class EncryptedManagementAction implements Action {
      */
     @RequirePOST
     public HttpResponse doDecryptCredential(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
+        // 解密操作需要Jenkins管理员权限，防止低权限用户获取明文凭据
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
         String id = req.getParameter("id");
         if (id == null || id.isEmpty()) {
             return errorResponse("Credential ID is required");
         }
 
-        StandardCredentials c = findCredentialById(id);
-        if (c == null) {
-            return errorResponse("Credential not found: " + id);
+        try {
+            JSONObject result = CredentialService.decryptCredentialJson(folder, id);
+            result.put("success", true);
+            AuditLogger.logRead(folder.getFullName(), id, CredentialService.getCredentialsTypeKey(
+                    CredentialService.findCredentialById(folder, id)));
+            return jsonResult(result);
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         }
-
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("id", id);
-        result.put("type", getCredentialsTypeName(c));
-        result.put("typeKey", getCredentialsTypeKey(c));
-
-        if (c instanceof UsernamePasswordCredentials) {
-            UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
-            result.put("username", upc.getUsername());
-            result.put("password", Secret.toString(upc.getPassword()));
-        } else if (c instanceof StringCredentials) {
-            result.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
-        } else if (c instanceof BasicSSHUserPrivateKey) {
-            BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
-            result.put("username", ssh.getUsername());
-            result.put("passphrase", Secret.toString(ssh.getPassphrase()));
-            result.put("privateKey", ssh.getPrivateKey());
-            // 从私钥推导公钥
-            String publicKey = derivePublicKeyFromPrivate(ssh.getPrivateKey(), ssh.getPassphrase());
-            if (publicKey != null && !publicKey.isEmpty()) {
-                result.put("publicKey", publicKey);
-            }
-        }
-
-        AuditLogger.logRead(folder.getFullName(), id, getCredentialsTypeKey(c));
-        return jsonResult(result);
     }
 
     /**
@@ -236,28 +199,15 @@ public class EncryptedManagementAction implements Action {
         String description = req.getParameter("description");
         String secret = req.getParameter("secret");
 
-        if (secret == null || secret.trim().isEmpty()) {
-            return errorResponse("Secret value is required");
-        }
-
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            StringCredentialsImpl credential = new StringCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    (id != null && !id.isEmpty()) ? id : null,
-                    description,
-                    Secret.fromString(secret));
-
-            store.addCredentials(Domain.global(), credential);
+            StringCredentialsImpl credential = CredentialService.createSecretText(
+                    folder, id, description, secret, false);
             AuditLogger.logCreate(folder.getFullName(), credential.getId(), "SECRET_TEXT");
             return successResponse("Secret text credential created successfully");
+        } catch (CredentialService.ValidationException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create secret text credential", e);
-            return errorResponse("Failed to create credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("create secret text credential", e));
         }
     }
 
@@ -273,32 +223,15 @@ public class EncryptedManagementAction implements Action {
         String username = req.getParameter("username");
         String password = req.getParameter("password");
 
-        if (username == null || username.trim().isEmpty()) {
-            return errorResponse("Username is required");
-        }
-        if (password == null || password.trim().isEmpty()) {
-            return errorResponse("Password is required");
-        }
-
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            UsernamePasswordCredentialsImpl credential = new UsernamePasswordCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    (id != null && !id.isEmpty()) ? id : null,
-                    description,
-                    username,
-                    password);
-
-            store.addCredentials(Domain.global(), credential);
+            UsernamePasswordCredentialsImpl credential = CredentialService.createUsernamePassword(
+                    folder, id, description, username, password, false);
             AuditLogger.logCreate(folder.getFullName(), credential.getId(), "USERNAME_PASSWORD");
             return successResponse("Username/Password credential created successfully");
+        } catch (CredentialService.ValidationException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create username/password credential", e);
-            return errorResponse("Failed to create credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("create username/password credential", e));
         }
     }
 
@@ -315,36 +248,15 @@ public class EncryptedManagementAction implements Action {
         String passphrase = req.getParameter("passphrase");
         String privateKey = req.getParameter("privateKey");
 
-        if (username == null || username.trim().isEmpty()) {
-            return errorResponse("Username is required");
-        }
-        if (privateKey == null || privateKey.trim().isEmpty()) {
-            return errorResponse("Private key is required");
-        }
-
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            BasicSSHUserPrivateKey.DirectEntryPrivateKeySource source =
-                    new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(privateKey);
-
-            BasicSSHUserPrivateKey credential = new BasicSSHUserPrivateKey(
-                    CredentialsScope.GLOBAL,
-                    (id != null && !id.isEmpty()) ? id : null,
-                    username,
-                    source,
-                    passphrase != null ? passphrase : "",
-                    description);
-
-            store.addCredentials(Domain.global(), credential);
+            BasicSSHUserPrivateKey credential = CredentialService.createSSHKey(
+                    folder, id, description, username, passphrase, privateKey, false);
             AuditLogger.logCreate(folder.getFullName(), credential.getId(), "SSH_KEY");
             return successResponse("SSH credential created successfully");
+        } catch (CredentialService.ValidationException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to create SSH credential", e);
-            return errorResponse("Failed to create credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("create SSH credential", e));
         }
     }
 
@@ -363,32 +275,14 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            StandardCredentials existing = findCredentialById(id);
-            if (existing == null) {
-                return errorResponse("Credential not found: " + id);
-            }
-            if (!(existing instanceof StringCredentials)) {
-                return errorResponse("Credential is not a Secret Text type");
-            }
-
-            StringCredentialsImpl updated = new StringCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    id,
-                    description != null ? description : existing.getDescription(),
-                    Secret.fromString(secret != null ? secret : Secret.toString(((StringCredentials) existing).getSecret())));
-
-            store.updateCredentials(Domain.global(), existing, updated);
+            CredentialService.updateSecretText(folder, id, description, secret);
             AuditLogger.logUpdate(folder.getFullName(), id, "SECRET_TEXT");
             return successResponse("Secret text credential updated successfully");
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to update secret text credential", e);
-            return errorResponse("Failed to update credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("update secret text credential", e));
         }
     }
 
@@ -408,34 +302,14 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            StandardCredentials existing = findCredentialById(id);
-            if (existing == null) {
-                return errorResponse("Credential not found: " + id);
-            }
-            if (!(existing instanceof UsernamePasswordCredentials)) {
-                return errorResponse("Credential is not a Username/Password type");
-            }
-
-            UsernamePasswordCredentials oldCred = (UsernamePasswordCredentials) existing;
-            UsernamePasswordCredentialsImpl updated = new UsernamePasswordCredentialsImpl(
-                    CredentialsScope.GLOBAL,
-                    id,
-                    description != null ? description : existing.getDescription(),
-                    username != null ? username : oldCred.getUsername(),
-                    password != null ? password : Secret.toString(oldCred.getPassword()));
-
-            store.updateCredentials(Domain.global(), existing, updated);
+            CredentialService.updateUsernamePassword(folder, id, description, username, password);
             AuditLogger.logUpdate(folder.getFullName(), id, "USERNAME_PASSWORD");
             return successResponse("Username/Password credential updated successfully");
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to update username/password credential", e);
-            return errorResponse("Failed to update credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("update username/password credential", e));
         }
     }
 
@@ -456,38 +330,14 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            StandardCredentials existing = findCredentialById(id);
-            if (existing == null) {
-                return errorResponse("Credential not found: " + id);
-            }
-            if (!(existing instanceof BasicSSHUserPrivateKey)) {
-                return errorResponse("Credential is not an SSH Key type");
-            }
-
-            BasicSSHUserPrivateKey oldCred = (BasicSSHUserPrivateKey) existing;
-            String resolvedPrivateKey = privateKey != null && !privateKey.isEmpty() ? privateKey : oldCred.getPrivateKey();
-            BasicSSHUserPrivateKey.DirectEntryPrivateKeySource newSource =
-                    new BasicSSHUserPrivateKey.DirectEntryPrivateKeySource(resolvedPrivateKey);
-            BasicSSHUserPrivateKey updated = new BasicSSHUserPrivateKey(
-                    CredentialsScope.GLOBAL,
-                    id,
-                    username != null ? username : oldCred.getUsername(),
-                    newSource,
-                    passphrase != null ? passphrase : Secret.toString(oldCred.getPassphrase()),
-                    description != null ? description : existing.getDescription());
-
-            store.updateCredentials(Domain.global(), existing, updated);
+            CredentialService.updateSSHKey(folder, id, description, username, passphrase, privateKey);
             AuditLogger.logUpdate(folder.getFullName(), id, "SSH_KEY");
             return successResponse("SSH credential updated successfully");
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to update SSH credential", e);
-            return errorResponse("Failed to update credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("update SSH credential", e));
         }
     }
 
@@ -503,27 +353,22 @@ public class EncryptedManagementAction implements Action {
             return errorResponse("Credential ID is required");
         }
 
-        CredentialsStore store = getFolderStore();
-        if (store == null) {
-            return errorResponse("No credentials store found for this folder");
-        }
-
         try {
-            StandardCredentials c = findCredentialById(id);
+            StandardCredentials c = CredentialService.findCredentialById(folder, id);
             if (c == null) {
                 return errorResponse("Credential not found: " + id);
             }
-
-            boolean removed = store.removeCredentials(Domain.global(), c);
+            boolean removed = CredentialService.deleteCredential(folder, id);
             if (removed) {
-                AuditLogger.logDelete(folder.getFullName(), id, getCredentialsTypeKey(c));
+                AuditLogger.logDelete(folder.getFullName(), id, CredentialService.getCredentialsTypeKey(c));
                 return successResponse("Credential deleted successfully");
             } else {
                 return errorResponse("Failed to remove credential from store");
             }
+        } catch (IOException e) {
+            return errorResponse(e.getMessage());
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to delete credential", e);
-            return errorResponse("Failed to delete credential: " + e.getMessage());
+            return errorResponse(CredentialService.safeErrorMessage("delete credential", e));
         }
     }
 
@@ -534,38 +379,7 @@ public class EncryptedManagementAction implements Action {
     @RequirePOST
     public HttpResponse doGenerateKeyPair(StaplerRequest req, StaplerResponse rsp) throws IOException {
         folder.checkPermission(Item.CONFIGURE);
-
-        String passphrase = req.getParameter("passphrase");
-
-        try {
-            java.security.KeyPairGenerator keyGen = java.security.KeyPairGenerator.getInstance("RSA");
-            keyGen.initialize(2048, new java.security.SecureRandom());
-            java.security.KeyPair keyPair = keyGen.generateKeyPair();
-
-            // 私钥 - PEM格式（如果有passphrase则加密）
-            String privateKeyPem;
-            if (passphrase != null && !passphrase.isEmpty()) {
-                privateKeyPem = encryptPrivateKeyToPEM(keyPair.getPrivate(), passphrase);
-            } else {
-                privateKeyPem = encodePrivateKeyToPEM(keyPair.getPrivate());
-            }
-
-            // 公钥 - OpenSSH格式
-            String publicKey = getSSHPublicKey(keyPair.getPublic());
-
-            JSONObject result = new JSONObject();
-            result.put("privateKey", privateKeyPem);
-            result.put("publicKey", publicKey);
-
-            JSONObject json = new JSONObject();
-            json.put("success", true);
-            json.put("data", result);
-            AuditLogger.logGenerateKeyPair(folder.getFullName());
-            return jsonResult(json);
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to generate SSH key pair", e);
-            return errorResponse("Failed to generate key pair: " + e.getMessage());
-        }
+        return CryptoService.generateKeyPair(req.getParameter("passphrase"), folder.getFullName());
     }
 
     /**
@@ -899,7 +713,8 @@ public class EncryptedManagementAction implements Action {
      */
     @RequirePOST
     public HttpResponse doExportCredentials(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
+        // 导出凭据需要Jenkins管理员权限
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
         String password = req.getParameter("password");
         if (password == null || password.isEmpty()) {
@@ -937,7 +752,8 @@ public class EncryptedManagementAction implements Action {
      */
     @RequirePOST
     public HttpResponse doExportCredentialsFile(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
+        // 导出凭据文件需要Jenkins管理员权限
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
         String password = req.getParameter("password");
         if (password == null || password.isEmpty()) {
@@ -1212,7 +1028,8 @@ public class EncryptedManagementAction implements Action {
      */
     @RequirePOST
     public HttpResponse doSyncToExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        folder.checkPermission(Item.CONFIGURE);
+        // 同步到外部存储需要Jenkins管理员权限
+        Jenkins.get().checkPermission(Jenkins.ADMINISTER);
 
         ExternalStorageManager manager = ExternalStorageManager.getInstance();
         if (!manager.isEnabled()) {
@@ -1220,7 +1037,7 @@ public class EncryptedManagementAction implements Action {
         }
 
         // 快照读取凭据列表，避免长时间持有引用（仅当前文件夹自身的凭据）
-        final List<StandardCredentials> creds = new ArrayList<>(getFolderCredentials());
+        final List<StandardCredentials> creds = new ArrayList<>(CredentialService.getStoreCredentials(folder));
         final String folderName = folder.getFullName();
 
         // 异步执行同步操作，不阻塞请求线程
@@ -1238,7 +1055,7 @@ public class EncryptedManagementAction implements Action {
                             credData.put("id", c.getId());
                             credData.put("description", c.getDescription());
                             credData.put("scope", c.getScope().name());
-                            credData.put("type", getCredentialsTypeKey(c));
+                            credData.put("type", CredentialService.getCredentialsTypeKey(c));
 
                             if (c instanceof UsernamePasswordCredentials) {
                                 UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;

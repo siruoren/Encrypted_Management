@@ -75,6 +75,13 @@ public class ImportService {
     public static ImportResult importFromJson(ItemGroup<?> itemGroup, JSONObject importObj,
                                               boolean overwrite, Set<Integer> selectedIndices) throws Exception {
         JSONArray credentialsArray = importObj.getJSONArray("credentials");
+
+        // 安全检查：凭据数量限制
+        if (credentialsArray.size() > CredentialService.MAX_CREDENTIALS_PER_IMPORT) {
+            throw new SecurityException("Too many credentials in import data (max "
+                    + CredentialService.MAX_CREDENTIALS_PER_IMPORT + ")");
+        }
+
         String sourceFolder = importObj.optString("folder", "unknown");
         String folderName = itemGroup instanceof hudson.model.Item
                 ? ((hudson.model.Item) itemGroup).getFullName() : "system";
@@ -91,6 +98,16 @@ public class ImportService {
                 continue;
             }
             JSONObject credObj = credentialsArray.getJSONObject(i);
+
+            // JSON Schema 验证：字段白名单和长度校验
+            try {
+                CredentialService.validateCredentialJson(credObj);
+            } catch (CredentialService.ValidationException ve) {
+                String id = credObj.optString("id", "unknown");
+                result.record(ImportResult.Status.FAILED, id, "", "UNKNOWN", ve.getMessage());
+                continue;
+            }
+
             String id = credObj.optString("id", null);
             String description = credObj.optString("description", "");
             String type = credObj.optString("type", "UNKNOWN");
@@ -139,8 +156,20 @@ public class ImportService {
                                              boolean overwrite, Set<String> selectedEntries) throws Exception {
         byte[] zipBytes = java.util.Base64.getDecoder().decode(zipBase64Data);
 
+        // 安全检查：ZIP文件大小限制
+        if (zipBytes.length > CredentialService.MAX_ZIP_SIZE_BYTES) {
+            throw new SecurityException("ZIP file exceeds maximum allowed size ("
+                    + CredentialService.MAX_ZIP_SIZE_BYTES / (1024 * 1024) + "MB)");
+        }
+
         // 先解析所有ZIP条目
         List<ZipEntryData> entries = parseZipEntries(zipBytes, password);
+
+        // 安全检查：ZIP条目数量限制
+        if (entries.size() > CredentialService.MAX_ZIP_ENTRIES) {
+            throw new SecurityException("ZIP contains too many entries (max "
+                    + CredentialService.MAX_ZIP_ENTRIES + ")");
+        }
 
         ImportResult mergedResult = new ImportResult("all");
 
@@ -227,6 +256,14 @@ public class ImportService {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
                 try {
+                    // Zip Slip 防护：检查路径遍历攻击
+                    String entryName = entry.getName();
+                    if (entryName.contains("..") || entryName.startsWith("/") || entryName.startsWith("\\")) {
+                        LOGGER.warning("Skipping ZIP entry with suspicious path: " + entryName);
+                        zis.closeEntry();
+                        continue;
+                    }
+
                     ByteArrayOutputStream entryBaos = new ByteArrayOutputStream();
                     byte[] buffer = new byte[4096];
                     int len;
