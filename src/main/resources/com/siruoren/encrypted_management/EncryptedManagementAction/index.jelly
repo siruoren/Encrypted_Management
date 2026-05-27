@@ -16,10 +16,8 @@
             <!-- 操作按钮栏 -->
             <div style="margin-bottom: 1em; display:flex; flex-wrap:wrap; gap:0.5em;">
                 <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%Add Credential}</button>
-                <button class="jenkins-button" onclick="openAuditLogDialog()">${%Audit Log}</button>
                 <button class="jenkins-button" onclick="openExportDialog()">${%Export Credentials}</button>
                 <button class="jenkins-button" onclick="openImportDialog()">${%Import Credentials}</button>
-                <button class="jenkins-button" onclick="openStorageDialog()">${%External Storage}</button>
             </div>
 
             <!-- 凭据列表（由JS自动加载） -->
@@ -186,27 +184,6 @@
                 </div>
             </div>
 
-            <!-- ==================== 审计日志弹窗 ==================== -->
-            <div id="audit-log-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:800px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Audit Log}</h2>
-                    <pre id="audit-log-content" style="max-height:400px; overflow-y:auto; background:#f5f5f5; padding:1em; border-radius:4px; font-size:0.85em; white-space:pre-wrap; word-break:break-all;">${%Loading credentials...}</pre>
-                    <!-- 审计日志配置 -->
-                    <div style="border-top:1px solid #ddd; padding-top:1em; margin-top:1em;">
-                        <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Max Retention Days}</div>
-                            <div class="jenkins-form-control" style="display:flex; align-items:center; gap:0.5em;">
-                                <input type="number" id="auditMaxRetentionDays" class="jenkins-input" min="1" max="365" value="30" style="width:80px;"/>
-                                <button class="jenkins-button" onclick="saveAuditConfig()">${%Save}</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button" onclick="closeDialog('audit-log-dialog')">${%Cancel}</button>
-                    </div>
-                </div>
-            </div>
-
             <!-- ==================== 导出凭据弹窗 ==================== -->
             <div id="export-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
@@ -290,52 +267,6 @@
                 </div>
             </div>
 
-            <!-- ==================== 外部存储弹窗 ==================== -->
-            <div id="storage-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%External Storage}</h2>
-                    <div id="storage-status-content" style="margin-bottom:1em;">${%Loading credentials...}</div>
-                    <!-- 配置区域 -->
-                    <div style="border-top:1px solid #ddd; padding-top:1em; margin-top:1em;">
-                        <h3>${%Enable External Storage}</h3>
-                        <div class="jenkins-form-item">
-                            <label><input type="checkbox" id="storageEnabled" onchange="toggleStorageConfig()"/> ${%Enabled}</label>
-                        </div>
-                        <div id="storage-config-area" style="display:none;">
-                            <div class="jenkins-form-item">
-                                <div class="jenkins-form-label">${%Sync Mode}</div>
-                                <div class="jenkins-form-control">
-                                    <select id="storageSyncMode" class="jenkins-input">
-                                        <option value="MANUAL">Manual</option>
-                                        <option value="AUTO_SYNC">Auto Sync</option>
-                                        <option value="EXTERNAL_ONLY">External Only</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="jenkins-form-item">
-                                <div class="jenkins-form-label">${%Storage Path}</div>
-                                <div class="jenkins-form-control">
-                                    <input type="text" id="storagePath" class="jenkins-input" placeholder="${%Leave blank for default path}"/>
-                                </div>
-                            </div>
-                            <div class="jenkins-form-item">
-                                <div class="jenkins-form-label">${%Encryption Password}</div>
-                                <div class="jenkins-form-control">
-                                    <input type="password" id="storageEncryptionPassword" class="jenkins-input" placeholder="${%At least 8 characters}"/>
-                                </div>
-                            </div>
-                            <div class="jenkins-form-item">
-                                <button class="jenkins-button jenkins-button--primary" onclick="saveStorageConfig()">${%Save}</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button jenkins-button--primary" onclick="syncToExternal()">${%Sync to External Storage}</button>
-                        <button class="jenkins-button" onclick="closeDialog('storage-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
-                    </div>
-                </div>
-            </div>
-
             <st:once>
                 <script type="text/javascript">
                 //<![CDATA[
@@ -374,20 +305,12 @@
                         updateFailed: "${%Update failed}",
                         generateKeyPair: "${%Generate Key Pair}",
                         publicKey: "${%Public Key}",
-                        noAuditLogs: "${%No audit logs found}",
                         passwordMinLength: "${%Password must be at least 8 characters}",
                         passwordRequired: "${%Password is required}",
                         encryptedDataRequired: "${%Encrypted data is required}",
                         exportFailed: "${%Export failed}",
                         importSuccess: "${%Import completed}",
                         importFailed: "${%Import failed}",
-                        storageType: "${%Storage Type}",
-                        connected: "${%Connected}",
-                        enabled: "${%Enabled}",
-                        syncMode: "${%Sync Mode}",
-                        path: "${%Path}",
-                        confirmSync: "${%Are you sure you want to sync all credentials to external storage}",
-                        syncFailed: "${%Sync failed}",
                         ok: "OK",
                         error: "${%Error}",
                         success: "${%Success}"
@@ -563,7 +486,7 @@
                             if (data.success) {
                                 closeDialog('create-dialog');
                                 showMessage(i18n.credentialCreated, 'success');
-                                setTimeout(function() { window.location.reload(); }, 1000);
+                                loadCredentials();
                             } else {
                                 showMessage(data.message || i18n.creationFailed, 'error');
                                 createBtn.disabled = false;
@@ -577,7 +500,7 @@
 
                     // ==================== 凭据列表 ====================
 
-                    (function loadCredentials() {
+                    function loadCredentials() {
                         var container = document.getElementById('credentials-container');
                         container.innerHTML = '';
                         var alertDiv = document.createElement('div');
@@ -608,7 +531,9 @@
                             errDiv.textContent = i18n.requestFailed + ': ' + err.message;
                             container.appendChild(errDiv);
                         });
-                    })();
+                    }
+
+                    loadCredentials();
 
                     function renderCredentialsTable(credentials) {
                         var container = document.getElementById('credentials-container');
@@ -801,7 +726,7 @@
                             if (data.success) {
                                 closeDialog('update-dialog');
                                 showMessage(i18n.credentialUpdated, 'success');
-                                setTimeout(function() { window.location.reload(); }, 1000);
+                                loadCredentials();
                             } else {
                                 showMessage(data.message || i18n.updateFailed, 'error');
                             }
@@ -827,67 +752,9 @@
                         .then(function(data) {
                             if (data.success) {
                                 showMessage(i18n.credentialDeleted, 'success');
-                                setTimeout(function() { window.location.reload(); }, 1000);
+                                loadCredentials();
                             } else {
                                 showMessage(i18n.failedToDelete, 'error');
-                            }
-                        })
-                        .catch(function(err) {
-                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                        });
-                    }
-
-                    // ==================== 审计日志弹窗 ====================
-
-                    function openAuditLogDialog() {
-                        var content = document.getElementById('audit-log-content');
-                        content.textContent = i18n.loading;
-                        document.getElementById('audit-log-dialog').style.display = '';
-
-                        secureFetch(credentialsUrl + 'auditLog', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: 'limit=200'
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                content.textContent = data.logs.join('\n') || i18n.noAuditLogs;
-                                if (data.maxRetentionDays) {
-                                    document.getElementById('auditMaxRetentionDays').value = data.maxRetentionDays;
-                                }
-                            } else {
-                                content.textContent = data.message || i18n.requestFailed;
-                            }
-                        })
-                        .catch(function(err) {
-                            content.textContent = i18n.requestFailed + ': ' + err.message;
-                        });
-                    }
-
-                    function saveAuditConfig() {
-                        var days = document.getElementById('auditMaxRetentionDays').value;
-                        if (!days || parseInt(days) < 1) {
-                            showMessage(i18n.requestFailed, 'error');
-                            return;
-                        }
-                        secureFetch(credentialsUrl + 'configureAuditLog', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: 'maxRetentionDays=' + encodeURIComponent(days)
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                showMessage(data.message, 'success');
-                            } else {
-                                showMessage(data.message || i18n.requestFailed, 'error');
                             }
                         })
                         .catch(function(err) {
@@ -1036,7 +903,7 @@
                                 closeDialog('import-dialog');
                                 var r = data.importResult;
                                 showMessage(i18n.importSuccess + ' (imported: ' + r.imported + ', updated: ' + r.updated + ', skipped: ' + r.skipped + ', failed: ' + r.failed + ')', 'success');
-                                setTimeout(function() { window.location.reload(); }, 2000);
+                                loadCredentials();
                             } else {
                                 showMessage(data.message || i18n.importFailed, 'error');
                             }
@@ -1046,112 +913,6 @@
                         });
                     }
 
-                    // ==================== 外部存储弹窗 ====================
-
-                    function openStorageDialog() {
-                        var statusDiv = document.getElementById('storage-status-content');
-                        statusDiv.innerHTML = i18n.loading;
-                        document.getElementById('storageEncryptionPassword').value = '';
-                        document.getElementById('storage-dialog').style.display = '';
-
-                        secureFetch(credentialsUrl + 'storageStatus', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            }
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                var html = '<div class="jenkins-alert jenkins-alert-' + (data.connected ? 'info' : 'warning') + '">';
-                                html += i18n.storageType + ': ' + data.storageType + '<br/>';
-                                html += i18n.connected + ': ' + (data.connected ? 'Yes' : 'No') + '<br/>';
-                                html += i18n.syncMode + ': ' + data.syncMode + '<br/>';
-                                html += (data.encrypted ? 'Encrypted: Yes' : 'Encrypted: No');
-                                if (data.configInfo && data.configInfo.path) {
-                                    html += '<br/>' + i18n.path + ': ' + data.configInfo.path;
-                                }
-                                html += '</div>';
-                                statusDiv.innerHTML = html;
-
-                                // 填充配置
-                                document.getElementById('storageEnabled').checked = data.enabled;
-                                document.getElementById('storageSyncMode').value = data.syncMode;
-                                document.getElementById('storagePath').value = data.storagePath || '';
-                                toggleStorageConfig();
-                            } else {
-                                statusDiv.innerHTML = '<div class="jenkins-alert jenkins-alert-warning">' + (data.message || i18n.requestFailed) + '</div>';
-                            }
-                        })
-                        .catch(function(err) {
-                            statusDiv.innerHTML = '<div class="jenkins-alert jenkins-alert-warning">' + i18n.requestFailed + ': ' + err.message + '</div>';
-                        });
-                    }
-
-                    function toggleStorageConfig() {
-                        var enabled = document.getElementById('storageEnabled').checked;
-                        document.getElementById('storage-config-area').style.display = enabled ? '' : 'none';
-                    }
-
-                    function saveStorageConfig() {
-                        var enabled = document.getElementById('storageEnabled').checked;
-                        var syncMode = document.getElementById('storageSyncMode').value;
-                        var storagePath = document.getElementById('storagePath').value;
-                        var encryptionPassword = document.getElementById('storageEncryptionPassword').value;
-
-                        var body = 'enabled=' + enabled + '&syncMode=' + syncMode;
-                        if (storagePath) {
-                            body += '&storagePath=' + encodeURIComponent(storagePath);
-                        }
-                        if (encryptionPassword) {
-                            body += '&encryptionPassword=' + encodeURIComponent(encryptionPassword);
-                        }
-
-                        secureFetch(credentialsUrl + 'configureStorage', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: body
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                showMessage(data.message, 'success');
-                                openStorageDialog(); // 刷新状态
-                            } else {
-                                showMessage(data.message || i18n.requestFailed, 'error');
-                            }
-                        })
-                        .catch(function(err) {
-                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                        });
-                    }
-
-                    function syncToExternal() {
-                        if (!confirm(i18n.confirmSync)) return;
-                        secureFetch(credentialsUrl + 'syncToExternal', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            }
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                closeDialog('storage-dialog');
-                                showMessage(data.message, 'success');
-                            } else {
-                                showMessage(data.message || i18n.syncFailed, 'error');
-                            }
-                        })
-                        .catch(function(err) {
-                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                        });
-                    }
                 //]]>
                 </script>
             </st:once>

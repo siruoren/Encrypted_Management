@@ -191,10 +191,10 @@ public class AuditLogger {
             return Collections.emptyList();
         }
 
-        // 按文件名倒序排列（最新的在前）
+        // 按文件名正序排列（最旧的在前），这样反转后最新的在最前面
         List<File> sortedFiles = new ArrayList<>();
         Collections.addAll(sortedFiles, logFiles);
-        sortedFiles.sort((a, b) -> b.getName().compareTo(a.getName()));
+        sortedFiles.sort((a, b) -> a.getName().compareTo(b.getName()));
 
         for (File f : sortedFiles) {
             try {

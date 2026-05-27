@@ -27,8 +27,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -40,10 +38,6 @@ import java.util.logging.Logger;
 @Extension
 public class SystemCredentialsAction implements RootAction {
     private static final Logger LOGGER = Logger.getLogger(SystemCredentialsAction.class.getName());
-
-    private static ExecutorService getAsyncExecutor() {
-        return ThreadPoolManager.getInstance().getExecutor();
-    }
 
     private Jenkins getJenkinsInstance() {
         return Jenkins.get();
@@ -698,188 +692,6 @@ public class SystemCredentialsAction implements RootAction {
             LOGGER.log(Level.SEVERE, "Failed to import system credentials from file", e);
             return errorResponse("Failed to import credentials: " + e.getMessage());
         }
-    }
-
-    /**
-     * API: 从外部存储导入系统级凭据
-     * 外部存储JSON格式与CredentialBackupService导出格式一致，可直接导入
-     */
-    @RequirePOST
-    public HttpResponse doImportFromExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
-
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-        if (!manager.isEnabled()) {
-            return errorResponse("External storage is not enabled");
-        }
-
-        String overwriteParam = req.getParameter("overwrite");
-        boolean overwrite = "true".equals(overwriteParam);
-
-        try {
-            ExternalStorage storage = manager.getStorage();
-            JSONObject externalData = storage.loadAllCredentials("system");
-
-            if (externalData == null) {
-                return errorResponse("No credentials found in external storage for system level");
-            }
-
-            JSONObject importResult = CredentialBackupService.importCredentialsFromJson(
-                    getJenkinsInstance(), externalData, overwrite);
-            AuditLogger.logImport("system", "imported from external: " + importResult.toString());
-
-            JSONObject result = new JSONObject();
-            result.put("success", true);
-            result.put("importResult", importResult);
-            result.put("message", "System credentials imported from external storage successfully");
-            return jsonResult(result);
-        } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to import system credentials from external storage", e);
-            return errorResponse("Failed to import credentials from external storage: " + e.getMessage());
-        }
-    }
-
-    // ==================== 外部存储 API ====================
-
-    @RequirePOST
-    public HttpResponse doStorageStatus(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
-
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-        JSONObject status = manager.getStatus();
-        status.put("success", true);
-        return jsonResult(status);
-    }
-
-    @RequirePOST
-    public HttpResponse doConfigureStorage(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
-
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-
-        String enabledStr = req.getParameter("enabled");
-        String syncModeStr = req.getParameter("syncMode");
-        String storagePath = req.getParameter("storagePath");
-        String encryptionPassword = req.getParameter("encryptionPassword");
-
-        boolean enabled = "true".equalsIgnoreCase(enabledStr);
-
-        // 启用外部存储时必须设置加密密码
-        if (enabled && (encryptionPassword == null || encryptionPassword.isEmpty())
-                && (manager.getEncryptionPassword() == null || manager.getEncryptionPassword().isEmpty())) {
-            return errorResponse("Encryption password is required when enabling external storage");
-        }
-
-        manager.setEnabled(enabled);
-
-        if (syncModeStr != null) {
-            try {
-                ExternalStorageManager.SyncMode mode = ExternalStorageManager.SyncMode.valueOf(syncModeStr);
-                manager.setSyncMode(mode);
-            } catch (IllegalArgumentException e) {
-                return errorResponse("Invalid sync mode: " + syncModeStr);
-            }
-        }
-
-        if (storagePath != null && !storagePath.trim().isEmpty()) {
-            manager.setStoragePath(storagePath.trim());
-        }
-
-        if (encryptionPassword != null && !encryptionPassword.isEmpty()) {
-            manager.setEncryptionPassword(encryptionPassword);
-        }
-
-        String detail = "enabled=" + enabled + ", syncMode=" + syncModeStr
-                + ", path=" + storagePath
-                + ", encrypted=" + (encryptionPassword != null && !encryptionPassword.isEmpty());
-        AuditLogger.log("system", "CONFIGURE_STORAGE", "*", "*", detail);
-        return successResponse("External storage configuration saved");
-    }
-
-    @RequirePOST
-    public HttpResponse doTestStorageConnection(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
-
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-        boolean connected = manager.testConnection();
-
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("connected", connected);
-        return jsonResult(result);
-    }
-
-    @RequirePOST
-    public HttpResponse doSyncToExternal(StaplerRequest req, StaplerResponse rsp) throws IOException {
-        getJenkinsInstance().checkPermission(Jenkins.ADMINISTER);
-
-        ExternalStorageManager manager = ExternalStorageManager.getInstance();
-        if (!manager.isEnabled()) {
-            return errorResponse("External storage is not enabled");
-        }
-
-        final List<StandardCredentials> creds = new ArrayList<>(CredentialsProvider.lookupCredentials(
-                StandardCredentials.class, (ItemGroup<?>) getJenkinsInstance(), null, Collections.emptyList()));
-        final String folderName = "system";
-
-        getAsyncExecutor().submit(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    ExternalStorage storage = manager.getStorage();
-
-                    // 构建所有凭据的JSON数据
-                    net.sf.json.JSONArray credentialsArray = new net.sf.json.JSONArray();
-                    for (StandardCredentials c : creds) {
-                        try {
-                            JSONObject credData = new JSONObject();
-                            credData.put("id", c.getId());
-                            credData.put("description", c.getDescription());
-                            credData.put("scope", c.getScope().name());
-                            credData.put("type", getCredentialsTypeKey(c));
-
-                            if (c instanceof UsernamePasswordCredentials) {
-                                UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
-                                credData.put("username", upc.getUsername());
-                                credData.put("password", Secret.toString(upc.getPassword()));
-                            } else if (c instanceof StringCredentials) {
-                                credData.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
-                            } else if (c instanceof BasicSSHUserPrivateKey) {
-                                BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
-                                credData.put("username", ssh.getUsername());
-                                credData.put("passphrase", Secret.toString(ssh.getPassphrase()));
-                                credData.put("privateKey", ssh.getPrivateKey());
-                            }
-
-                            credentialsArray.add(credData);
-                        } catch (Exception e) {
-                            LOGGER.log(Level.WARNING, "Failed to serialize credential: " + c.getId(), e);
-                        }
-                    }
-
-                    // 构建完整的导出JSON，与CredentialBackupService格式一致
-                    JSONObject allData = new JSONObject();
-                    allData.put("version", "1.0");
-                    allData.put("folder", folderName);
-                    allData.put("exportTime", java.time.LocalDateTime.now().toString());
-                    allData.put("count", credentialsArray.size());
-                    allData.put("credentials", credentialsArray);
-
-                    // 保存为jenkins_root.json
-                    storage.saveAllCredentials(folderName, allData);
-
-                    AuditLogger.log(folderName, "SYNC_TO_EXTERNAL", "*", "*", "synced " + credentialsArray.size() + " credentials");
-                    LOGGER.info("Async sync completed: " + credentialsArray.size() + " system credentials synced");
-                } catch (Exception e) {
-                    LOGGER.log(Level.SEVERE, "Failed to sync system credentials to external storage", e);
-                }
-            }
-        });
-
-        JSONObject result = new JSONObject();
-        result.put("success", true);
-        result.put("message", "Sync started in background for " + creds.size() + " credentials");
-        return jsonResult(result);
     }
 
     // ==================== 辅助方法 ====================

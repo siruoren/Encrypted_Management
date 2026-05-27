@@ -58,7 +58,7 @@ public class CredentialBackupService {
             JSONObject credObj = new JSONObject();
             credObj.put("id", c.getId());
             credObj.put("description", c.getDescription());
-            credObj.put("scope", c.getScope().name());
+            credObj.put("scope", c.getScope() != null ? c.getScope().name() : "GLOBAL");
 
             if (c instanceof UsernamePasswordCredentials) {
                 UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
