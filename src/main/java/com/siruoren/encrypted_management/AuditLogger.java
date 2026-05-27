@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -41,14 +42,22 @@ public class AuditLogger {
     private static volatile int maxLogFiles = 30; // 保留30天日志（可配置）
 
     // 单线程日志写入器，保证顺序写入、防阻塞、防并发冲突
+    // 非daemon线程，确保JVM关闭前日志写入完成
     private static final ExecutorService logWriter = Executors.newSingleThreadExecutor(new ThreadFactory() {
         @Override
         public Thread newThread(Runnable r) {
             Thread t = new Thread(r, "EncryptedManagement-AuditLogger");
-            t.setDaemon(true); // 守护线程，JVM关闭时自动退出
+            t.setDaemon(false); // 非守护线程，JVM关闭时等待日志写入完成
             return t;
         }
     });
+
+    // 注册JVM关闭钩子，确保审计日志不丢失
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            shutdown();
+        }, "EncryptedManagement-AuditLogger-ShutdownHook"));
+    }
 
     private AuditLogger() {}
 
@@ -90,12 +99,30 @@ public class AuditLogger {
     /**
      * 记录审计日志（异步非阻塞）
      * 使用单线程Executor顺序写入，避免并发冲突和阻塞调用线程
+     *
+     * 安全措施：
+     * - credentialId 使用哈希摘要，避免直接记录原始ID泄露内部命名
+     * - folder 使用哈希摘要，避免泄露Git仓库、生产环境等命名
+     * - 绝对禁止记录任何凭据的明文值
      */
     public static void log(String folderName, String action, String credentialId, String credentialType, String detail) {
-        String user = getCurrentUser();
+        log(folderName, action, credentialId, credentialType, detail, null);
+    }
+
+    /**
+     * 记录审计日志（异步非阻塞）
+     * 使用单线程Executor顺序写入，避免并发冲突和阻塞调用线程
+     *
+     * @param userName 显式传入的用户名，null时自动获取当前Authentication
+     */
+    public static void log(String folderName, String action, String credentialId, String credentialType, String detail, String userName) {
+        String user = userName != null ? userName : getCurrentUser();
         String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        // 脱敏：对credentialId和folder进行哈希处理
+        String safeCredId = credentialId != null ? hashForAudit(credentialId) : "*";
+        String safeFolder = folderName != null ? hashForAudit(folderName) : "*";
         String logLine = String.format("[%s] user=%s folder=%s action=%s credentialId=%s type=%s detail=%s",
-                timestamp, user, folderName, action, credentialId, credentialType, detail != null ? detail : "");
+                timestamp, user, safeFolder, action, safeCredId, credentialType, detail != null ? detail : "");
 
         // 异步写入文件，不阻塞调用线程
         logWriter.submit(new LogWriteTask(logLine));
@@ -152,11 +179,15 @@ public class AuditLogger {
     }
 
     public static void logExport(String folderName, String detail) {
-        log(folderName, "EXPORT", "*", "*", detail);
+        log(folderName, "EXPORT", "*", "*", detail, null);
     }
 
     public static void logImport(String folderName, String detail) {
-        log(folderName, "IMPORT", "*", "*", detail);
+        log(folderName, "IMPORT", "*", "*", detail, null);
+    }
+
+    public static void logImport(String folderName, String detail, String userName) {
+        log(folderName, "IMPORT", "*", "*", detail, userName);
     }
 
     public static void logGenerateKeyPair(String folderName) {
@@ -171,6 +202,26 @@ public class AuditLogger {
             return Jenkins.get().getAuthentication().getName();
         } catch (Exception e) {
             return "anonymous";
+        }
+    }
+
+    /**
+     * 审计日志脱敏哈希：对敏感标识符进行SHA-256摘要
+     * 返回前8位十六进制，足以区分不同对象但无法逆推原始值
+     */
+    private static String hashForAudit(String input) {
+        if (input == null || input.isEmpty()) return "*";
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 4 && i < hash.length; i++) {
+                sb.append(String.format("%02x", hash[i]));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 必定可用，此处仅为编译器要求
+            return "****";
         }
     }
 
@@ -191,14 +242,16 @@ public class AuditLogger {
             return Collections.emptyList();
         }
 
-        // 按文件名倒序排列（最新的在前）
+        // 按文件名倒序排列（最新的文件在前）
         List<File> sortedFiles = new ArrayList<>();
         Collections.addAll(sortedFiles, logFiles);
         sortedFiles.sort((a, b) -> b.getName().compareTo(a.getName()));
 
+        // 每个文件内行也倒序，保证整体时间倒序（最新的条目在前）
         for (File f : sortedFiles) {
             try {
                 List<String> lines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
+                Collections.reverse(lines);
                 allLines.addAll(lines);
             } catch (IOException e) {
                 LOGGER.log(Level.WARNING, "Failed to read audit log file: " + f.getAbsolutePath(), e);
@@ -206,8 +259,7 @@ public class AuditLogger {
             if (allLines.size() >= limit * 2) break; // 多读一些，后面截断
         }
 
-        // 倒序（最新的在前），取limit条
-        Collections.reverse(allLines);
+        // allLines 已经是时间倒序，直接取limit条
         if (allLines.size() > limit) {
             allLines = allLines.subList(0, limit);
         }
@@ -241,5 +293,21 @@ public class AuditLogger {
             }
         }
         return deleted;
+    }
+
+    /**
+     * 优雅关闭审计日志线程池（由ThreadPoolManager.shutdown()调用）
+     */
+    public static void shutdown() {
+        if (logWriter != null && !logWriter.isShutdown()) {
+            logWriter.shutdown();
+            try {
+                logWriter.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
+                LOGGER.info("Audit logger thread pool shut down complete");
+            } catch (InterruptedException e) {
+                logWriter.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }

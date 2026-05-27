@@ -83,6 +83,9 @@ public class ThreadPoolManager {
             }
             LOGGER.info("Thread pool shut down complete");
         }
+
+        // 同时关闭审计日志线程池
+        AuditLogger.shutdown();
     }
 
     /**

@@ -1,30 +1,28 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
-    <l:layout title="${%Credentials Management} - ${it.folder.displayName}">
+    <l:layout title="${%credentials.management} - ${it.folder.displayName}">
         <st:include page="sidepanel.jelly" it="${it.folder}" optional="true"/>
         <l:main-panel>
             <j:choose>
                 <j:when test="${it.hasPermission()}">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:1em;">
                 <div>
-                    <h1>${%Credentials Management}</h1>
-                    <p>${%Folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
+                    <h1>${%credentials.management}</h1>
+                    <p>${%folder}: <a href="${rootURL}/${it.folder.url}">${it.folder.fullName}</a></p>
                 </div>
-                <a href="api-doc" class="jenkins-button" style="white-space:nowrap;">${%API Docs}</a>
+                <a href="api-doc" class="jenkins-button" style="white-space:nowrap;">${%api.docs}</a>
             </div>
 
             <!-- 操作按钮栏 -->
             <div style="margin-bottom: 1em; display:flex; flex-wrap:wrap; gap:0.5em;">
-                <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%Add Credential}</button>
-                <button class="jenkins-button" onclick="openAuditLogDialog()">${%Audit Log}</button>
-                <button class="jenkins-button" onclick="openExportDialog()">${%Export Credentials}</button>
-                <button class="jenkins-button" onclick="openImportDialog()">${%Import Credentials}</button>
-                <button class="jenkins-button" onclick="openStorageDialog()">${%External Storage}</button>
+                <button class="jenkins-button jenkins-button--primary" onclick="openCreateDialog()">${%add.credential}</button>
+                <button class="jenkins-button" onclick="openExportDialog()">${%export.credentials}</button>
+                <button class="jenkins-button" onclick="openImportDialog()">${%import.credentials}</button>
             </div>
 
             <!-- 凭据列表（由JS自动加载） -->
             <div id="credentials-container">
-                <div class="jenkins-alert jenkins-alert-info">${%Loading credentials...}</div>
+                <div class="jenkins-alert jenkins-alert-info">${%loading}</div>
             </div>
 
             <!-- ==================== 通用消息弹窗 ==================== -->
@@ -39,81 +37,108 @@
             <!-- ==================== 创建凭据弹窗 ==================== -->
             <div id="create-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Add Credential}</h2>
+                    <h2>${%add.credential}</h2>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Kind}</div>
+                        <div class="jenkins-form-label">${%kind}</div>
                         <div class="jenkins-form-control">
                             <select id="credentialType" class="jenkins-input" onchange="toggleCredentialForm()">
-                                <option value="SECRET_TEXT">${%Secret text}</option>
-                                <option value="USERNAME_PASSWORD">${%Username with password}</option>
-                                <option value="SSH_KEY">${%SSH Username with private key}</option>
+                                <option value="SECRET_TEXT">${%secret.text}</option>
+                                <option value="USERNAME_PASSWORD">${%username.with.password}</option>
+                                <option value="SSH_KEY">${%ssh.username.with.private.key}</option>
+                                <option value="SECRET_FILE">${%secret.file}</option>
+                                <option value="CERTIFICATE">${%certificate}</option>
                             </select>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%ID}</div>
+                        <div class="jenkins-form-label">${%id}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="credId" class="jenkins-input" placeholder="${%Optional - leave blank for auto-generation}"/>
+                            <input type="text" id="credId" class="jenkins-input" placeholder="${%optional.auto.generate}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Description}</div>
+                        <div class="jenkins-form-label">${%description}</div>
                         <div class="jenkins-form-control">
-                            <input type="text" id="credDescription" class="jenkins-input" placeholder="${%Optional description}"/>
+                            <input type="text" id="credDescription" class="jenkins-input" placeholder="${%optional.description}"/>
                         </div>
                     </div>
                     <div id="form-secret-text">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Secret}</div>
+                            <div class="jenkins-form-label">${%secret}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="credSecret" class="jenkins-input" placeholder="${%Enter secret text}"/>
+                                <input type="password" id="credSecret" class="jenkins-input" placeholder="${%enter.secret.text}"/>
                             </div>
                         </div>
                     </div>
                     <div id="form-username-password" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
-                                <input type="text" id="credUsername" class="jenkins-input" placeholder="${%Enter username}"/>
+                                <input type="text" id="credUsername" class="jenkins-input" placeholder="${%enter.username}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Password}</div>
+                            <div class="jenkins-form-label">${%password}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="credPassword" class="jenkins-input" placeholder="${%Enter password}"/>
+                                <input type="password" id="credPassword" class="jenkins-input" placeholder="${%enter.password}"/>
                             </div>
                         </div>
                     </div>
                     <div id="form-ssh-key" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
-                                <input type="text" id="credSshUsername" class="jenkins-input" placeholder="${%Enter username}"/>
+                                <input type="text" id="credSshUsername" class="jenkins-input" placeholder="${%enter.username}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Passphrase}</div>
+                            <div class="jenkins-form-label">${%passphrase}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="credPassphrase" class="jenkins-input" placeholder="${%Optional passphrase}"/>
+                                <input type="password" id="credPassphrase" class="jenkins-input" placeholder="${%optional.passphrase}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Private Key}</div>
+                            <div class="jenkins-form-label">${%private.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="credPrivateKey" class="jenkins-input" rows="8" placeholder="${%Enter private key}"></textarea>
-                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPair()">${%Generate Key Pair}</button>
+                                <textarea id="credPrivateKey" class="jenkins-input" rows="8" placeholder="${%enter.private.key}"></textarea>
+                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPair()">${%generate.key.pair}</button>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Public Key}</div>
+                            <div class="jenkins-form-label">${%public.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="credPublicKey" class="jenkins-input" rows="2" placeholder="${%Optional - auto-generated with key pair}" readonly="true"></textarea>
+                                <textarea id="credPublicKey" class="jenkins-input" rows="2" placeholder="${%optional.auto.generated.key.pair}" readonly="true"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="form-secret-file" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%file}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="credSecretFile" class="jenkins-input" onchange="handleFileSelect(this)"/>
+                                <input type="hidden" id="credFileContent" value=""/>
+                                <input type="hidden" id="credFileName" value=""/>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="form-certificate" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%certificate}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="credCertificateFile" class="jenkins-input" onchange="handleCertificateSelect(this)" accept=".p12,.pfx,.jks,.keystore"/>
+                                <input type="hidden" id="credKeyStoreBytes" value=""/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%password}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="credKeyStorePassword" class="jenkins-input" placeholder="${%optional.keystore.password}"/>
                             </div>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">${%Add}</button>
-                        <button class="jenkins-button" onclick="closeDialog('create-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="createCredential()">${%add}</button>
+                        <button class="jenkins-button" onclick="closeDialog('create-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                     </div>
                 </div>
             </div>
@@ -121,88 +146,92 @@
             <!-- ==================== 更新凭据弹窗 ==================== -->
             <div id="update-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Update Credential}</h2>
+                    <h2>${%update.credential}</h2>
                     <input type="hidden" id="updateId"/>
                     <input type="hidden" id="updateTypeKey"/>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Description}</div>
+                        <div class="jenkins-form-label">${%description}</div>
                         <div class="jenkins-form-control">
                             <input type="text" id="updateDescription" class="jenkins-input"/>
                         </div>
                     </div>
                     <div id="update-form-secret-text" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Secret}</div>
+                            <div class="jenkins-form-label">${%secret}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
+                                <input type="password" id="updateSecret" class="jenkins-input" placeholder="${%leave.blank.keep.current}"/>
                             </div>
                         </div>
                     </div>
                     <div id="update-form-username-password" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
                                 <input type="text" id="updateUsername" class="jenkins-input"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Password}</div>
+                            <div class="jenkins-form-label">${%password}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
+                                <input type="password" id="updatePassword" class="jenkins-input" placeholder="${%leave.blank.keep.current}"/>
                             </div>
                         </div>
                     </div>
                     <div id="update-form-ssh-key" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Username}</div>
+                            <div class="jenkins-form-label">${%username}</div>
                             <div class="jenkins-form-control">
                                 <input type="text" id="updateSshUsername" class="jenkins-input"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Passphrase}</div>
+                            <div class="jenkins-form-label">${%passphrase}</div>
                             <div class="jenkins-form-control">
-                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%Leave blank to keep current value}"/>
+                                <input type="password" id="updatePassphrase" class="jenkins-input" placeholder="${%leave.blank.keep.current}"/>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Private Key}</div>
+                            <div class="jenkins-form-label">${%private.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%Leave blank to keep current value}"></textarea>
-                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPairForUpdate()">${%Generate Key Pair}</button>
+                                <textarea id="updatePrivateKey" class="jenkins-input" rows="8" placeholder="${%leave.blank.keep.current}"></textarea>
+                                <button type="button" class="jenkins-button" style="margin-top:0.5em;" onclick="generateKeyPairForUpdate()">${%generate.key.pair}</button>
                             </div>
                         </div>
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Public Key}</div>
+                            <div class="jenkins-form-label">${%public.key}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="updatePublicKey" class="jenkins-input" rows="2" placeholder="${%Optional - auto-generated with key pair}" readonly="true"></textarea>
+                                <textarea id="updatePublicKey" class="jenkins-input" rows="2" placeholder="${%optional.auto.generated.key.pair}" readonly="true"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="update-form-secret-file" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%file}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="updateSecretFile" class="jenkins-input" onchange="handleUpdateFileSelect(this)"/>
+                                <input type="hidden" id="updateFileContent" value=""/>
+                                <input type="hidden" id="updateFileName" value=""/>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="update-form-certificate" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%certificate}</div>
+                            <div class="jenkins-form-control">
+                                <input type="file" id="updateCertificateFile" class="jenkins-input" onchange="handleUpdateCertificateSelect(this)" accept=".p12,.pfx,.jks,.keystore"/>
+                                <input type="hidden" id="updateKeyStoreBytes" value=""/>
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%password}</div>
+                            <div class="jenkins-form-control">
+                                <input type="password" id="updateKeyStorePassword" class="jenkins-input" placeholder="${%optional.keystore.password}"/>
                             </div>
                         </div>
                     </div>
                     <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button jenkins-button--primary" onclick="submitUpdate()">${%Save}</button>
-                        <button class="jenkins-button" onclick="closeDialog('update-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ==================== 审计日志弹窗 ==================== -->
-            <div id="audit-log-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:800px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Audit Log}</h2>
-                    <pre id="audit-log-content" style="max-height:400px; overflow-y:auto; background:#f5f5f5; padding:1em; border-radius:4px; font-size:0.85em; white-space:pre-wrap; word-break:break-all;">${%Loading credentials...}</pre>
-                    <!-- 审计日志配置 -->
-                    <div style="border-top:1px solid #ddd; padding-top:1em; margin-top:1em;">
-                        <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Max Retention Days}</div>
-                            <div class="jenkins-form-control" style="display:flex; align-items:center; gap:0.5em;">
-                                <input type="number" id="auditMaxRetentionDays" class="jenkins-input" min="1" max="365" value="30" style="width:80px;"/>
-                                <button class="jenkins-button" onclick="saveAuditConfig()">${%Save}</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button" onclick="closeDialog('audit-log-dialog')">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="submitUpdate()">${%save}</button>
+                        <button class="jenkins-button" onclick="closeDialog('update-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                     </div>
                 </div>
             </div>
@@ -210,26 +239,35 @@
             <!-- ==================== 导出凭据弹窗 ==================== -->
             <div id="export-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Export Credentials}</h2>
+                    <h2>${%export.credentials}</h2>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Encryption Password}</div>
+                        <div class="jenkins-form-label">${%encryption.password}</div>
                         <div class="jenkins-form-control">
-                            <input type="password" id="exportPassword" class="jenkins-input" placeholder="${%At least 8 characters}"/>
+                            <input type="password" id="exportPassword" class="jenkins-input" placeholder="${%at.least.8.characters}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="doExport()">${%Export as Text}</button>
-                        <button class="jenkins-button" onclick="doExportFile()" style="margin-left:0.5em;">${%Download as File}</button>
-                        <button class="jenkins-button" onclick="closeDialog('export-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                        <div class="jenkins-form-label">${%select.credentials}</div>
+                        <div style="margin-bottom:0.5em;">
+                            <label><input type="checkbox" id="exportSelectAll" onchange="toggleExportSelectAll()"/> ${%select.all}</label>
+                        </div>
+                        <div id="export-credential-list" style="max-height:200px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
+                            <span style="color:#999;">${%loading}</span>
+                        </div>
+                    </div>
+                    <div class="jenkins-form-item">
+                        <button class="jenkins-button jenkins-button--primary" onclick="doExport()">${%export.as.text}</button>
+                        <button class="jenkins-button" onclick="doExportFile()" style="margin-left:0.5em;">${%download.as.file}</button>
+                        <button class="jenkins-button" onclick="closeDialog('export-dialog')" style="margin-left:0.5em;">${%cancel}</button>
                     </div>
                     <div id="export-result-area" style="display:none; margin-top:1em;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Encrypted Backup Data}</div>
+                            <div class="jenkins-form-label">${%encrypted.backup.data}</div>
                             <div class="jenkins-form-control">
                                 <textarea id="exportData" class="jenkins-input" rows="6" readonly="true" style="font-size:0.8em;"></textarea>
                             </div>
                         </div>
-                        <p style="color:#666; font-size:0.9em;">${%Save this data with password to a safe place. You can restore credentials from this backup on any Jenkins instance.}</p>
+                        <p style="color:#666; font-size:0.9em;">${%backup.data.hint}</p>
                     </div>
                 </div>
             </div>
@@ -237,44 +275,66 @@
             <!-- ==================== 导入凭据弹窗 ==================== -->
             <div id="import-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Import Credentials}</h2>
+                    <h2>${%import.credentials}</h2>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Encryption Password}</div>
+                        <div class="jenkins-form-label">${%encryption.password}</div>
                         <div class="jenkins-form-control">
-                            <input type="password" id="importPassword" class="jenkins-input" placeholder="${%Enter decryption password}"/>
+                            <input type="password" id="importPassword" class="jenkins-input" placeholder="${%enter.decryption.password}"/>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <div class="jenkins-form-label">${%Import Method}</div>
+                        <div class="jenkins-form-label">${%import.method}</div>
                         <div class="jenkins-form-control">
                             <select id="importMethod" class="jenkins-input" onchange="toggleImportMethod()">
-                                <option value="paste">${%Paste Encrypted Data}</option>
-                                <option value="file">${%Upload Backup File}</option>
+                                <option value="paste">${%paste.encrypted.data}</option>
+                                <option value="file">${%upload.backup.file}</option>
                             </select>
                         </div>
                     </div>
                     <div id="import-paste-area">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Encrypted Data}</div>
+                            <div class="jenkins-form-label">${%encrypted.data}</div>
                             <div class="jenkins-form-control">
-                                <textarea id="importData" class="jenkins-input" rows="6" placeholder="${%Paste encrypted backup data here}" style="font-size:0.8em;"></textarea>
+                                <textarea id="importData" class="jenkins-input" rows="6" placeholder="${%paste.encrypted.data.here}" style="font-size:0.8em;"></textarea>
                             </div>
                         </div>
                     </div>
                     <div id="import-file-area" style="display:none;">
                         <div class="jenkins-form-item">
-                            <div class="jenkins-form-label">${%Backup File}</div>
+                            <div class="jenkins-form-label">${%backup.file}</div>
                             <div class="jenkins-form-control">
                                 <input type="file" id="importFile" class="jenkins-input" accept=".enc,.txt"/>
                             </div>
                         </div>
                     </div>
                     <div class="jenkins-form-item">
-                        <label><input type="checkbox" id="importOverwrite"/> ${%Overwrite existing credentials}</label>
+                        <div class="jenkins-form-label">${%conflict.resolution}</div>
+                        <div class="jenkins-form-control">
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="skip" checked="checked"/> ${%skip.existing}</label>
+                            <label style="display:block; margin:0.3em 0;"><input type="radio" name="importOverwriteMode" value="overwrite"/> ${%overwrite.existing}</label>
+                        </div>
                     </div>
-                    <div class="jenkins-form-item">
-                        <button class="jenkins-button jenkins-button--primary" onclick="doImport()">${%Import}</button>
-                        <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+                    <!-- 第一步：解析数据 -->
+                    <div id="import-step1">
+                        <div class="jenkins-form-item">
+                            <button class="jenkins-button jenkins-button--primary" onclick="doParseImport()">${%parse.data}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%cancel}</button>
+                        </div>
+                    </div>
+                    <!-- 第二步：选择凭据并导入 -->
+                    <div id="import-step2" style="display:none;">
+                        <div class="jenkins-form-item">
+                            <div class="jenkins-form-label">${%select.credentials.import}</div>
+                            <div style="margin-bottom:0.5em;">
+                                <label><input type="checkbox" id="importSelectAll" checked="checked" onchange="toggleImportSelectAll()"/> ${%select.all}</label>
+                            </div>
+                            <div id="import-credential-list" style="max-height:250px; overflow-y:auto; border:1px solid #ccc; border-radius:4px; padding:0.5em;">
+                            </div>
+                        </div>
+                        <div class="jenkins-form-item">
+                            <button class="jenkins-button jenkins-button--primary" onclick="doImportSelected()">${%import.selected}</button>
+                            <button class="jenkins-button" onclick="closeDialog('import-dialog')" style="margin-left:0.5em;">${%cancel}</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -282,56 +342,22 @@
             <!-- ==================== 解密内容弹窗 ==================== -->
             <div id="decrypt-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
                 <div style="background:#fff; margin:5% auto; padding:2em; max-width:700px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%Show Secret}</h2>
+                    <h2>${%show.secret}</h2>
                     <pre id="decrypt-content" style="background:#f0f8ff; padding:1em; border-radius:4px; font-family:monospace; white-space:pre-wrap; word-break:break-all; font-size:0.9em; max-height:400px; overflow-y:auto;"></pre>
                     <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('decrypt-dialog')">${%Cancel}</button>
+                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('decrypt-dialog')">${%cancel}</button>
                     </div>
                 </div>
             </div>
 
-            <!-- ==================== 外部存储弹窗 ==================== -->
-            <div id="storage-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
-                <div style="background:#fff; margin:5% auto; padding:2em; max-width:600px; border-radius:8px; max-height:80vh; overflow-y:auto;">
-                    <h2>${%External Storage}</h2>
-                    <div id="storage-status-content" style="margin-bottom:1em;">${%Loading credentials...}</div>
-                    <!-- 配置区域 -->
-                    <div style="border-top:1px solid #ddd; padding-top:1em; margin-top:1em;">
-                        <h3>${%Enable External Storage}</h3>
-                        <div class="jenkins-form-item">
-                            <label><input type="checkbox" id="storageEnabled" onchange="toggleStorageConfig()"/> ${%Enabled}</label>
-                        </div>
-                        <div id="storage-config-area" style="display:none;">
-                            <div class="jenkins-form-item">
-                                <div class="jenkins-form-label">${%Sync Mode}</div>
-                                <div class="jenkins-form-control">
-                                    <select id="storageSyncMode" class="jenkins-input">
-                                        <option value="MANUAL">Manual</option>
-                                        <option value="AUTO_SYNC">Auto Sync</option>
-                                        <option value="EXTERNAL_ONLY">External Only</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="jenkins-form-item">
-                                <div class="jenkins-form-label">${%Storage Path}</div>
-                                <div class="jenkins-form-control">
-                                    <input type="text" id="storagePath" class="jenkins-input" placeholder="${%Leave blank for default path}"/>
-                                </div>
-                            </div>
-                            <div class="jenkins-form-item">
-                                <div class="jenkins-form-label">${%Encryption Password}</div>
-                                <div class="jenkins-form-control">
-                                    <input type="password" id="storageEncryptionPassword" class="jenkins-input" placeholder="${%At least 8 characters}"/>
-                                </div>
-                            </div>
-                            <div class="jenkins-form-item">
-                                <button class="jenkins-button jenkins-button--primary" onclick="saveStorageConfig()">${%Save}</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="jenkins-form-item" style="margin-top:1em;">
-                        <button class="jenkins-button jenkins-button--primary" onclick="syncToExternal()">${%Sync to External Storage}</button>
-                        <button class="jenkins-button" onclick="closeDialog('storage-dialog')" style="margin-left:0.5em;">${%Cancel}</button>
+            <!-- 导入结果弹窗 -->
+            <div id="import-result-dialog" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000;">
+                <div style="position:relative; max-width:600px; margin:80px auto; background:#fff; border-radius:8px; padding:1.5em; box-shadow:0 4px 12px rgba(0,0,0,0.3);">
+                    <h2>${%import.result}</h2>
+                    <div id="import-result-summary" style="margin:1em 0;"></div>
+                    <div id="import-result-details" style="max-height:300px; overflow-y:auto; border:1px solid #ddd; border-radius:4px; margin:1em 0;"></div>
+                    <div class="jenkins-form-item">
+                        <button class="jenkins-button jenkins-button--primary" onclick="closeDialog('import-result-dialog');window.location.reload();">${%close}</button>
                     </div>
                 </div>
             </div>
@@ -344,53 +370,59 @@
                     var credentialsUrl = "${rootURL}/${it.folder.url}Encrypted_Management/";
 
                     var i18n = {
-                        hide: "${%Hide}",
-                        showSecret: "${%Show Secret}",
-                        update: "${%Update}",
-                        decryptionFailed: "${%Decryption failed}",
-                        requestFailed: "${%Request failed}",
-                        permissionDenied: "${%Permission denied. You lack access to manage credentials for this folder.}",
-                        secretRequired: "${%Secret value is required}",
-                        usernameRequired: "${%Username is required}",
-                        passwordRequired: "${%Password is required}",
-                        privateKeyRequired: "${%Private key is required}",
-                        credentialCreated: "${%Credential created successfully. Reloading...}",
-                        creationFailed: "${%Creation failed}",
-                        confirmDelete: "${%Are you sure you want to delete this credential}",
-                        credentialDeleted: "${%Credential deleted. Reloading...}",
-                        failedToDelete: "${%Failed to delete credential}",
-                        noCredentials: "${%No credentials configured for this folder.}",
-                        id: "${%ID}",
-                        description: "${%Description}",
-                        kind: "${%Kind}",
-                        actions: "${%Actions}",
-                        deleteLabel: "${%Delete}",
-                        loading: "${%Loading credentials...}",
-                        username: "${%Username}",
-                        secret: "${%Secret}",
-                        passphrase: "${%Passphrase}",
-                        privateKey: "${%Private Key}",
-                        credentialUpdated: "${%Credential updated successfully. Reloading...}",
-                        updateFailed: "${%Update failed}",
-                        generateKeyPair: "${%Generate Key Pair}",
-                        publicKey: "${%Public Key}",
-                        noAuditLogs: "${%No audit logs found}",
-                        passwordMinLength: "${%Password must be at least 8 characters}",
-                        passwordRequired: "${%Password is required}",
-                        encryptedDataRequired: "${%Encrypted data is required}",
-                        exportFailed: "${%Export failed}",
-                        importSuccess: "${%Import completed}",
-                        importFailed: "${%Import failed}",
-                        storageType: "${%Storage Type}",
-                        connected: "${%Connected}",
-                        enabled: "${%Enabled}",
-                        syncMode: "${%Sync Mode}",
-                        path: "${%Path}",
-                        confirmSync: "${%Are you sure you want to sync all credentials to external storage}",
-                        syncFailed: "${%Sync failed}",
+                        hide: "${%hide}",
+                        showSecret: "${%show.secret}",
+                        update: "${%update}",
+                        decryptionFailed: "${%decryption.failed}",
+                        requestFailed: "${%request.failed}",
+                        permissionDenied: "${%permission.denied}",
+                        secretRequired: "${%secret.required}",
+                        usernameRequired: "${%username.required}",
+                        passwordRequired: "${%password.required}",
+                        privateKeyRequired: "${%private.key.required}",
+                        credentialCreated: "${%credential.created}",
+                        creationFailed: "${%creation.failed}",
+                        confirmDelete: "${%confirm.delete}",
+                        credentialDeleted: "${%credential.deleted}",
+                        failedToDelete: "${%delete.failed}",
+                        noCredentials: "${%no.credentials}",
+                        id: "${%id}",
+                        description: "${%description}",
+                        kind: "${%kind}",
+                        actions: "${%actions}",
+                        deleteLabel: "${%delete}",
+                        loading: "${%loading}",
+                        username: "${%username}",
+                        secret: "${%secret}",
+                        passphrase: "${%passphrase}",
+                        privateKey: "${%private.key}",
+                        credentialUpdated: "${%credential.updated}",
+                        updateFailed: "${%update.failed}",
+                        generateKeyPair: "${%generate.key.pair}",
+                        publicKey: "${%public.key}",
+                        passwordMinLength: "${%password.min.length}",
+                        passwordRequired: "${%password.required}",
+                        encryptedDataRequired: "${%encrypted.data.required}",
+                        exportFailed: "${%export.failed}",
+                        importSuccess: "${%import.completed}",
+                        importFailed: "${%import.failed}",
+                        selectCredentials: "${%select.at.least.one}",
                         ok: "OK",
-                        error: "${%Error}",
-                        success: "${%Success}"
+                        error: "${%error}",
+                        success: "${%success}",
+                        importResult: "${%import.result}",
+                        imported: "${%imported}",
+                        updated: "${%updated}",
+                        skipped: "${%skipped}",
+                        failed: "${%failed}",
+                        close: "${%close}",
+                        fileRequired: "${%file.required}",
+                        certificateRequired: "${%certificate.required}",
+                        fileName: "${%file.name}",
+                        fileSize: "${%file.size}",
+                        fileContent: "${%file.content}",
+                        keyStoreSize: "${%keystore.size}",
+                        password: "${%password}"
                     };
 
                     // ==================== 通用弹窗方法 ====================
@@ -414,6 +446,55 @@
 
                     function closeMessageDialog() {
                         document.getElementById('message-dialog').style.display = 'none';
+                    }
+
+                    function showImportResultDialog(importResult) {
+                        var summaryDiv = document.getElementById('import-result-summary');
+                        var detailsDiv = document.getElementById('import-result-details');
+                        var html = '<div style="display:flex; gap:1em; flex-wrap:wrap;">';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#e8f5e9; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#2e7d32;">' + (importResult.imported || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.imported + '</div></div>';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#fff3e0; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#e65100;">' + (importResult.updated || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.updated + '</div></div>';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#e3f2fd; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#1565c0;">' + (importResult.skipped || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.skipped + '</div></div>';
+                        html += '<div style="flex:1; min-width:100px; text-align:center; padding:0.5em; background:#ffebee; border-radius:4px;">';
+                        html += '<div style="font-size:1.5em; font-weight:bold; color:#c62828;">' + (importResult.failed || 0) + '</div>';
+                        html += '<div style="font-size:0.85em; color:#555;">' + i18n.failed + '</div></div>';
+                        html += '</div>';
+                        summaryDiv.innerHTML = html;
+                        var items = importResult.items || [];
+                        if (items.length > 0) {
+                            var tableHtml = '<table style="width:100%; border-collapse:collapse; font-size:0.85em;">';
+                            tableHtml += '<thead><tr style="background:#f5f5f5;">';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">ID</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.description + '</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:left; border-bottom:1px solid #ddd;">' + i18n.kind + '</th>';
+                            tableHtml += '<th style="padding:0.4em; text-align:center; border-bottom:1px solid #ddd;">' + i18n.importResult + '</th>';
+                            tableHtml += '</tr></thead><tbody>';
+                            for (var i = 0; i < items.length; i++) {
+                                var item = items[i];
+                                var statusColor = '#2e7d32';
+                                var statusText = i18n.imported;
+                                if (item.status === 'UPDATED') { statusColor = '#e65100'; statusText = i18n.updated; }
+                                else if (item.status === 'SKIPPED') { statusColor = '#1565c0'; statusText = i18n.skipped; }
+                                else if (item.status === 'FAILED') { statusColor = '#c62828'; statusText = i18n.failed; }
+                                tableHtml += '<tr>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.id || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.description || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee;">' + (item.type || '-') + '</td>';
+                                tableHtml += '<td style="padding:0.3em; border-bottom:1px solid #eee; text-align:center; color:' + statusColor + '; font-weight:bold;">' + statusText + '</td>';
+                                tableHtml += '</tr>';
+                            }
+                            tableHtml += '</tbody></table>';
+                            detailsDiv.innerHTML = tableHtml;
+                        } else {
+                            detailsDiv.innerHTML = '';
+                        }
+                        document.getElementById('import-result-dialog').style.display = '';
                     }
 
                     function secureFetch(url, options) {
@@ -447,6 +528,56 @@
                         document.getElementById('form-secret-text').style.display = type === 'SECRET_TEXT' ? '' : 'none';
                         document.getElementById('form-username-password').style.display = type === 'USERNAME_PASSWORD' ? '' : 'none';
                         document.getElementById('form-ssh-key').style.display = type === 'SSH_KEY' ? '' : 'none';
+                        document.getElementById('form-secret-file').style.display = type === 'SECRET_FILE' ? '' : 'none';
+                        document.getElementById('form-certificate').style.display = type === 'CERTIFICATE' ? '' : 'none';
+                    }
+
+                    function handleFileSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var file = input.files[0];
+                            document.getElementById('credFileName').value = file.name;
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('credFileContent').value = base64;
+                            };
+                            reader.readAsArrayBuffer(file);
+                        }
+                    }
+
+                    function handleCertificateSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('credKeyStoreBytes').value = base64;
+                            };
+                            reader.readAsArrayBuffer(input.files[0]);
+                        }
+                    }
+
+                    function handleUpdateFileSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var file = input.files[0];
+                            document.getElementById('updateFileName').value = file.name;
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('updateFileContent').value = base64;
+                            };
+                            reader.readAsArrayBuffer(file);
+                        }
+                    }
+
+                    function handleUpdateCertificateSelect(input) {
+                        if (input.files && input.files[0]) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                var base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)));
+                                document.getElementById('updateKeyStoreBytes').value = base64;
+                            };
+                            reader.readAsArrayBuffer(input.files[0]);
+                        }
                     }
 
                     function generateKeyPair() {
@@ -545,6 +676,18 @@
                             var passphrase = document.getElementById('credPassphrase').value.trim();
                             endpoint = 'createSSHKey';
                             body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(sshUsername) + '&passphrase=' + encodeURIComponent(passphrase) + '&privateKey=' + encodeURIComponent(privateKey);
+                        } else if (type === 'SECRET_FILE') {
+                            var fileName = document.getElementById('credFileName').value;
+                            var fileContent = document.getElementById('credFileContent').value;
+                            if (!fileName) { showMessage(i18n.fileRequired, 'error'); return; }
+                            endpoint = 'createSecretFile';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&fileName=' + encodeURIComponent(fileName) + '&fileContent=' + encodeURIComponent(fileContent);
+                        } else if (type === 'CERTIFICATE') {
+                            var keyStoreBytes = document.getElementById('credKeyStoreBytes').value;
+                            var keyStorePassword = document.getElementById('credKeyStorePassword').value.trim();
+                            if (!keyStoreBytes) { showMessage(i18n.certificateRequired, 'error'); return; }
+                            endpoint = 'createCertificate';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&keyStoreBytes=' + encodeURIComponent(keyStoreBytes) + '&keyStorePassword=' + encodeURIComponent(keyStorePassword);
                         }
 
                         var createBtn = event.target;
@@ -721,6 +864,13 @@
                                     if (data.publicKey) {
                                         content += '\n' + i18n.publicKey + ':\n' + data.publicKey;
                                     }
+                                } else if (typeKey === 'SECRET_FILE') {
+                                    content = i18n.fileName + ': ' + (data.fileName || '') + '\n' + i18n.fileSize + ': ' + (data.fileSize || 0) + ' bytes';
+                                    if (data.fileContent) {
+                                        content += '\n' + i18n.fileContent + ': [Base64] ' + data.fileContent.substring(0, 200) + (data.fileContent.length > 200 ? '...' : '');
+                                    }
+                                } else if (typeKey === 'CERTIFICATE') {
+                                    content = i18n.keyStoreSize + ': ' + (data.keyStoreSize || 0) + ' bytes\n' + i18n.password + ': ' + (data.keyStorePassword || '(empty)');
                                 }
                                 document.getElementById('decrypt-content').textContent = content;
                                 document.getElementById('decrypt-dialog').style.display = '';
@@ -748,6 +898,8 @@
                         document.getElementById('update-form-secret-text').style.display = 'none';
                         document.getElementById('update-form-username-password').style.display = 'none';
                         document.getElementById('update-form-ssh-key').style.display = 'none';
+                        document.getElementById('update-form-secret-file').style.display = 'none';
+                        document.getElementById('update-form-certificate').style.display = 'none';
                         if (typeKey === 'SECRET_TEXT') {
                             document.getElementById('update-form-secret-text').style.display = '';
                             document.getElementById('updateSecret').value = '';
@@ -760,6 +912,14 @@
                             document.getElementById('updateSshUsername').value = '';
                             document.getElementById('updatePassphrase').value = '';
                             document.getElementById('updatePrivateKey').value = '';
+                        } else if (typeKey === 'SECRET_FILE') {
+                            document.getElementById('update-form-secret-file').style.display = '';
+                            document.getElementById('updateFileContent').value = '';
+                            document.getElementById('updateFileName').value = '';
+                        } else if (typeKey === 'CERTIFICATE') {
+                            document.getElementById('update-form-certificate').style.display = '';
+                            document.getElementById('updateKeyStoreBytes').value = '';
+                            document.getElementById('updateKeyStorePassword').value = '';
                         }
                         document.getElementById('update-dialog').style.display = '';
                     }
@@ -784,6 +944,16 @@
                             var privateKey = document.getElementById('updatePrivateKey').value;
                             endpoint = 'updateSSHKey';
                             body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&username=' + encodeURIComponent(sshUsername) + '&passphrase=' + encodeURIComponent(passphrase) + '&privateKey=' + encodeURIComponent(privateKey);
+                        } else if (typeKey === 'SECRET_FILE') {
+                            var fileName = document.getElementById('updateFileName').value;
+                            var fileContent = document.getElementById('updateFileContent').value;
+                            endpoint = 'updateSecretFile';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&fileName=' + encodeURIComponent(fileName) + '&fileContent=' + encodeURIComponent(fileContent);
+                        } else if (typeKey === 'CERTIFICATE') {
+                            var keyStoreBytes = document.getElementById('updateKeyStoreBytes').value;
+                            var keyStorePassword = document.getElementById('updateKeyStorePassword').value;
+                            endpoint = 'updateCertificate';
+                            body = 'id=' + encodeURIComponent(id) + '&description=' + encodeURIComponent(description) + '&keyStoreBytes=' + encodeURIComponent(keyStoreBytes) + '&keyStorePassword=' + encodeURIComponent(keyStorePassword);
                         } else {
                             showMessage('Unsupported credential type', 'error');
                             return;
@@ -837,71 +1007,86 @@
                         });
                     }
 
-                    // ==================== 审计日志弹窗 ====================
-
-                    function openAuditLogDialog() {
-                        var content = document.getElementById('audit-log-content');
-                        content.textContent = i18n.loading;
-                        document.getElementById('audit-log-dialog').style.display = '';
-
-                        secureFetch(credentialsUrl + 'auditLog', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: 'limit=200'
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                content.textContent = data.logs.join('\n') || i18n.noAuditLogs;
-                                if (data.maxRetentionDays) {
-                                    document.getElementById('auditMaxRetentionDays').value = data.maxRetentionDays;
-                                }
-                            } else {
-                                content.textContent = data.message || i18n.requestFailed;
-                            }
-                        })
-                        .catch(function(err) {
-                            content.textContent = i18n.requestFailed + ': ' + err.message;
-                        });
-                    }
-
-                    function saveAuditConfig() {
-                        var days = document.getElementById('auditMaxRetentionDays').value;
-                        if (!days || parseInt(days) < 1) {
-                            showMessage(i18n.requestFailed, 'error');
-                            return;
-                        }
-                        secureFetch(credentialsUrl + 'configureAuditLog', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            },
-                            body: 'maxRetentionDays=' + encodeURIComponent(days)
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                showMessage(data.message, 'success');
-                            } else {
-                                showMessage(data.message || i18n.requestFailed, 'error');
-                            }
-                        })
-                        .catch(function(err) {
-                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                        });
-                    }
-
                     // ==================== 导出弹窗 ====================
+
+                    var exportCredentialList = [];
 
                     function openExportDialog() {
                         document.getElementById('exportPassword').value = '';
                         document.getElementById('exportData').value = '';
                         document.getElementById('export-result-area').style.display = 'none';
+                        document.getElementById('exportSelectAll').checked = false;
                         document.getElementById('export-dialog').style.display = '';
+                        loadExportCredentialList();
+                    }
+
+                    function loadExportCredentialList() {
+                        var listDiv = document.getElementById('export-credential-list');
+                        listDiv.innerHTML = '<span style="color:#999;">' + i18n.loading + '</span>';
+                        secureFetch(credentialsUrl + 'listCredentials', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                [crumbHeaderName]: crumbValue
+                            }
+                        })
+                        .then(function(response) { return response.json(); })
+                        .then(function(data) {
+                            if (data.success && data.credentials) {
+                                exportCredentialList = data.credentials;
+                                renderExportCredentialList();
+                            } else {
+                                listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            }
+                        })
+                        .catch(function(err) {
+                            listDiv.innerHTML = '<span style="color:red;">' + i18n.requestFailed + '</span>';
+                        });
+                    }
+
+                    function renderExportCredentialList() {
+                        var listDiv = document.getElementById('export-credential-list');
+                        if (exportCredentialList.length === 0) {
+                            listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            return;
+                        }
+                        var html = '';
+                        for (var i = 0; i < exportCredentialList.length; i++) {
+                            var c = exportCredentialList[i];
+                            html += '<div style="padding:4px 0; border-bottom:1px solid #eee;">';
+                            html += '<label><input type="checkbox" class="export-cred-check" data-id="' + c.id + '" onchange="updateExportSelectAll()"/> ';
+                            html += '<strong>' + (c.description || c.id) + '</strong>';
+                            html += ' <span style="color:#666; font-size:0.85em;">[' + c.type + ']</span>';
+                            if (c.username) html += ' <span style="color:#666; font-size:0.85em;">- ' + c.username + '</span>';
+                            html += '</label></div>';
+                        }
+                        listDiv.innerHTML = html;
+                    }
+
+                    function toggleExportSelectAll() {
+                        var checked = document.getElementById('exportSelectAll').checked;
+                        var checks = document.querySelectorAll('.export-cred-check');
+                        for (var i = 0; i < checks.length; i++) {
+                            checks[i].checked = checked;
+                        }
+                    }
+
+                    function updateExportSelectAll() {
+                        var checks = document.querySelectorAll('.export-cred-check');
+                        var allChecked = true;
+                        for (var i = 0; i < checks.length; i++) {
+                            if (!checks[i].checked) { allChecked = false; break; }
+                        }
+                        document.getElementById('exportSelectAll').checked = allChecked;
+                    }
+
+                    function getExportSelectedIds() {
+                        var checks = document.querySelectorAll('.export-cred-check:checked');
+                        var ids = [];
+                        for (var i = 0; i < checks.length; i++) {
+                            ids.push(checks[i].getAttribute('data-id'));
+                        }
+                        return ids;
                     }
 
                     function doExport() {
@@ -910,13 +1095,19 @@
                             showMessage(i18n.passwordMinLength, 'error');
                             return;
                         }
+                        var selectedIds = getExportSelectedIds();
+                        if (selectedIds.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
+                        var body = 'password=' + encodeURIComponent(password) + '&selectedIds=' + encodeURIComponent(selectedIds.join(','));
                         secureFetch(credentialsUrl + 'exportCredentials', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'password=' + encodeURIComponent(password)
+                            body: body
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
@@ -938,7 +1129,11 @@
                             showMessage(i18n.passwordMinLength, 'error');
                             return;
                         }
-                        // 使用隐藏表单提交实现文件下载
+                        var selectedIds = getExportSelectedIds();
+                        if (selectedIds.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
                         var form = document.createElement('form');
                         form.method = 'POST';
                         form.action = credentialsUrl + 'exportCredentialsFile';
@@ -950,7 +1145,12 @@
                         pwInput.value = password;
                         form.appendChild(pwInput);
 
-                        // Jenkins crumb
+                        var idsInput = document.createElement('input');
+                        idsInput.type = 'hidden';
+                        idsInput.name = 'selectedIds';
+                        idsInput.value = selectedIds.join(',');
+                        form.appendChild(idsInput);
+
                         var crumbInput = document.createElement('input');
                         crumbInput.type = 'hidden';
                         crumbInput.name = crumbHeaderName;
@@ -964,16 +1164,24 @@
 
                     // ==================== 导入弹窗 ====================
 
+                    var importParsedData = null;
+                    var importEncryptedData = '';
+
                     function openImportDialog() {
                         document.getElementById('importPassword').value = '';
                         document.getElementById('importData').value = '';
-                        document.getElementById('importOverwrite').checked = false;
+                        var skipRadio = document.querySelector('input[name="importOverwriteMode"][value="skip"]');
+                        if (skipRadio) skipRadio.checked = true;
                         document.getElementById('importMethod').value = 'paste';
                         document.getElementById('import-paste-area').style.display = '';
                         document.getElementById('import-file-area').style.display = 'none';
                         if (document.getElementById('importFile')) {
                             document.getElementById('importFile').value = '';
                         }
+                        document.getElementById('import-step1').style.display = '';
+                        document.getElementById('import-step2').style.display = 'none';
+                        importParsedData = null;
+                        importEncryptedData = '';
                         document.getElementById('import-dialog').style.display = '';
                     }
 
@@ -983,9 +1191,8 @@
                         document.getElementById('import-file-area').style.display = method === 'file' ? '' : 'none';
                     }
 
-                    function doImport() {
+                    function doParseImport() {
                         var password = document.getElementById('importPassword').value;
-                        var overwrite = document.getElementById('importOverwrite').checked;
                         var method = document.getElementById('importMethod').value;
 
                         if (!password) {
@@ -994,7 +1201,6 @@
                         }
 
                         if (method === 'file') {
-                            // 从文件导入
                             var fileInput = document.getElementById('importFile');
                             if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
                                 showMessage(i18n.encryptedDataRequired, 'error');
@@ -1003,40 +1209,40 @@
                             var file = fileInput.files[0];
                             var reader = new FileReader();
                             reader.onload = function(e) {
-                                var fileContent = e.target.result;
-                                importCredentialsData(password, fileContent, overwrite);
+                                var fileContent = e.target.result.trim();
+                                parseImportData(password, fileContent);
                             };
                             reader.onerror = function() {
                                 showMessage('Failed to read file', 'error');
                             };
                             reader.readAsText(file);
                         } else {
-                            // 从粘贴内容导入
                             var data = document.getElementById('importData').value.trim();
                             if (!data) {
                                 showMessage(i18n.encryptedDataRequired, 'error');
                                 return;
                             }
-                            importCredentialsData(password, data, overwrite);
+                            parseImportData(password, data);
                         }
                     }
 
-                    function importCredentialsData(password, encryptedData, overwrite) {
-                        secureFetch(credentialsUrl + 'importCredentials', {
+                    function parseImportData(password, encryptedData) {
+                        secureFetch(credentialsUrl + 'parseImportData', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
                                 [crumbHeaderName]: crumbValue
                             },
-                            body: 'password=' + encodeURIComponent(password) + '&data=' + encodeURIComponent(encryptedData) + '&overwrite=' + overwrite
+                            body: 'password=' + encodeURIComponent(password) + '&data=' + encodeURIComponent(encryptedData)
                         })
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
                             if (data.success) {
-                                closeDialog('import-dialog');
-                                var r = data.importResult;
-                                showMessage(i18n.importSuccess + ' (imported: ' + r.imported + ', updated: ' + r.updated + ', skipped: ' + r.skipped + ', failed: ' + r.failed + ')', 'success');
-                                setTimeout(function() { window.location.reload(); }, 2000);
+                                importParsedData = data.credentials;
+                                importEncryptedData = data.encryptedData || encryptedData;
+                                renderImportCredentialList();
+                                document.getElementById('import-step1').style.display = 'none';
+                                document.getElementById('import-step2').style.display = '';
                             } else {
                                 showMessage(data.message || i18n.importFailed, 'error');
                             }
@@ -1046,69 +1252,65 @@
                         });
                     }
 
-                    // ==================== 外部存储弹窗 ====================
-
-                    function openStorageDialog() {
-                        var statusDiv = document.getElementById('storage-status-content');
-                        statusDiv.innerHTML = i18n.loading;
-                        document.getElementById('storageEncryptionPassword').value = '';
-                        document.getElementById('storage-dialog').style.display = '';
-
-                        secureFetch(credentialsUrl + 'storageStatus', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            }
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                var html = '<div class="jenkins-alert jenkins-alert-' + (data.connected ? 'info' : 'warning') + '">';
-                                html += i18n.storageType + ': ' + data.storageType + '<br/>';
-                                html += i18n.connected + ': ' + (data.connected ? 'Yes' : 'No') + '<br/>';
-                                html += i18n.syncMode + ': ' + data.syncMode + '<br/>';
-                                html += (data.encrypted ? 'Encrypted: Yes' : 'Encrypted: No');
-                                if (data.configInfo && data.configInfo.path) {
-                                    html += '<br/>' + i18n.path + ': ' + data.configInfo.path;
-                                }
-                                html += '</div>';
-                                statusDiv.innerHTML = html;
-
-                                // 填充配置
-                                document.getElementById('storageEnabled').checked = data.enabled;
-                                document.getElementById('storageSyncMode').value = data.syncMode;
-                                document.getElementById('storagePath').value = data.storagePath || '';
-                                toggleStorageConfig();
-                            } else {
-                                statusDiv.innerHTML = '<div class="jenkins-alert jenkins-alert-warning">' + (data.message || i18n.requestFailed) + '</div>';
-                            }
-                        })
-                        .catch(function(err) {
-                            statusDiv.innerHTML = '<div class="jenkins-alert jenkins-alert-warning">' + i18n.requestFailed + ': ' + err.message + '</div>';
-                        });
+                    function renderImportCredentialList() {
+                        var listDiv = document.getElementById('import-credential-list');
+                        if (!importParsedData || importParsedData.length === 0) {
+                            listDiv.innerHTML = '<span style="color:#999;">' + i18n.noCredentials + '</span>';
+                            return;
+                        }
+                        var html = '';
+                        for (var i = 0; i < importParsedData.length; i++) {
+                            var c = importParsedData[i];
+                            html += '<div style="padding:4px 0; border-bottom:1px solid #eee;">';
+                            html += '<label><input type="checkbox" class="import-cred-check" data-index="' + c.index + '" checked="checked" onchange="updateImportSelectAll()"/> ';
+                            html += '<strong>' + (c.description || c.id) + '</strong>';
+                            html += ' <span style="color:#666; font-size:0.85em;">[' + c.type + ']</span>';
+                            if (c.username) html += ' <span style="color:#666; font-size:0.85em;">- ' + c.username + '</span>';
+                            html += '</label></div>';
+                        }
+                        listDiv.innerHTML = html;
+                        document.getElementById('importSelectAll').checked = true;
                     }
 
-                    function toggleStorageConfig() {
-                        var enabled = document.getElementById('storageEnabled').checked;
-                        document.getElementById('storage-config-area').style.display = enabled ? '' : 'none';
+                    function toggleImportSelectAll() {
+                        var checked = document.getElementById('importSelectAll').checked;
+                        var checks = document.querySelectorAll('.import-cred-check');
+                        for (var i = 0; i < checks.length; i++) {
+                            checks[i].checked = checked;
+                        }
                     }
 
-                    function saveStorageConfig() {
-                        var enabled = document.getElementById('storageEnabled').checked;
-                        var syncMode = document.getElementById('storageSyncMode').value;
-                        var storagePath = document.getElementById('storagePath').value;
-                        var encryptionPassword = document.getElementById('storageEncryptionPassword').value;
-
-                        var body = 'enabled=' + enabled + '&syncMode=' + syncMode;
-                        if (storagePath) {
-                            body += '&storagePath=' + encodeURIComponent(storagePath);
+                    function updateImportSelectAll() {
+                        var checks = document.querySelectorAll('.import-cred-check');
+                        var allChecked = true;
+                        for (var i = 0; i < checks.length; i++) {
+                            if (!checks[i].checked) { allChecked = false; break; }
                         }
-                        if (encryptionPassword) {
-                            body += '&encryptionPassword=' + encodeURIComponent(encryptionPassword);
+                        document.getElementById('importSelectAll').checked = allChecked;
+                    }
+
+                    function doImportSelected() {
+                        var password = document.getElementById('importPassword').value;
+                        var overwriteRadio = document.querySelector('input[name="importOverwriteMode"]:checked');
+                        var overwrite = overwriteRadio ? overwriteRadio.value === 'overwrite' : false;
+
+                        var checks = document.querySelectorAll('.import-cred-check:checked');
+                        var selectedIndices = [];
+                        for (var i = 0; i < checks.length; i++) {
+                            selectedIndices.push(checks[i].getAttribute('data-index'));
                         }
 
-                        secureFetch(credentialsUrl + 'configureStorage', {
+                        if (selectedIndices.length === 0) {
+                            showMessage(i18n.selectCredentials, 'error');
+                            return;
+                        }
+
+                        var body = 'password=' + encodeURIComponent(password)
+                            + '&data=' + encodeURIComponent(importEncryptedData)
+                            + '&overwrite=' + overwrite
+                            + '&selectedIndices=' + encodeURIComponent(selectedIndices.join(','));
+
+                        secureFetch(credentialsUrl + 'importCredentials', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -1119,10 +1321,10 @@
                         .then(function(response) { return response.json(); })
                         .then(function(data) {
                             if (data.success) {
-                                showMessage(data.message, 'success');
-                                openStorageDialog(); // 刷新状态
+                                closeDialog('import-dialog');
+                                showImportResultDialog(data.importResult);
                             } else {
-                                showMessage(data.message || i18n.requestFailed, 'error');
+                                showMessage(data.message || i18n.importFailed, 'error');
                             }
                         })
                         .catch(function(err) {
@@ -1130,34 +1332,12 @@
                         });
                     }
 
-                    function syncToExternal() {
-                        if (!confirm(i18n.confirmSync)) return;
-                        secureFetch(credentialsUrl + 'syncToExternal', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/x-www-form-urlencoded',
-                                [crumbHeaderName]: crumbValue
-                            }
-                        })
-                        .then(function(response) { return response.json(); })
-                        .then(function(data) {
-                            if (data.success) {
-                                closeDialog('storage-dialog');
-                                showMessage(data.message, 'success');
-                            } else {
-                                showMessage(data.message || i18n.syncFailed, 'error');
-                            }
-                        })
-                        .catch(function(err) {
-                            showMessage(i18n.requestFailed + ': ' + err.message, 'error');
-                        });
-                    }
                 //]]>
                 </script>
             </st:once>
                 </j:when>
                 <j:otherwise>
-                    <div class="jenkins-alert jenkins-alert-warning">${%Permission denied. You lack access to manage credentials for this folder.}</div>
+                    <div class="jenkins-alert jenkins-alert-warning">${%permission.denied}</div>
                 </j:otherwise>
             </j:choose>
         </l:main-panel>
