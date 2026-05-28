@@ -16,9 +16,9 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 - **独立审计日志**：系统凭据管理页面可查看所有凭据操作审计日志，按时间倒序排列，按日期轮转，支持查看和清理；目录任务下不提供审计日志功能
 - **凭据加密备份/导入**：AES-256-GCM 加密导出，PBKDF2 密钥派生，支持跨 Jenkins 实例导入恢复，支持凭据选择导出（默认不选）和两步导入（先解析凭据列表，默认全选），支持文件下载导出和文件上传导入
 
-- **外部存储解耦**：系统凭据管理页面支持将凭据同步到外部存储后端，解耦 Jenkins 原生配置，支持手动/自动/仅外部三种同步模式；按目录层级存储（`fullName/taskName.enc`），保持与 Jenkins 目录任务层级一致；外部存储文件强制加密存储，支持从外部存储直接导入凭据
+- **外部存储解耦**：系统凭据管理页面支持将凭据同步到外部存储后端，解耦 Jenkins 原生配置，支持手动/自动/仅外部三种同步模式；**每个凭据单独保存为 `凭据id.enc` 文件**，放在对应目录任务子目录下（`storageDir/folderName/credentialId.enc`），系统级凭据放在 `jenkins_root/` 子目录；外部存储文件强制加密存储，支持从外部存储直接导入凭据
 
-- **全量 ZIP 导入导出**：系统凭证管理页面支持导入导出所有目录任务的凭据并打包为 ZIP 包，ZIP 包结构与外部存储路径一致；导出时使用 AES-256-GCM 加密保护；导入时分为两步：先解析 ZIP 展示凭据列表（按目录分组，默认全选），再选择要导入的凭据；支持"跳过已存在"和"强制覆盖"两种冲突处理策略；使用线程池并发导入提升批量导入速度
+- **全量 ZIP 导入导出**：系统凭证管理页面支持导入导出所有目录任务的凭据并打包为 ZIP 包，**ZIP 包结构为每个凭据单独一个 `.enc` 文件**（如 `jenkins_root/db-password.enc`、`test/ssh-key.enc`、`dev/team/api-token.enc`）；导出时使用 AES-256-GCM 加密保护；导入时分为两步：先解析 ZIP 展示凭据列表（按目录分组，默认全选），再选择要导入的凭据；支持"跳过已存在"和"强制覆盖"两种冲突处理策略；使用线程池并发导入提升批量导入速度
 
 - **导入结果详细展示**：所有导入操作完成后弹出结果统计弹窗，展示新增、覆盖、跳过、失败四种状态的数量和详细列表
 - **REST API**：提供审计日志、备份导入导出、外部存储管理等 API，便于外部系统集成
@@ -48,11 +48,51 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 - 系统级凭据管理（Jenkins 根目录）：需要 Jenkins ADMINISTER 权限（仅管理员可见左侧菜单）
 - 所有操作（创建、解密、更新、删除）均需通过权限校验
 
+## 存储格式
+
+### 外部存储结构
+
+每个凭据单独保存为独立的加密文件，便于单独管理和版本控制：
+
+```
+storageDir/
+├── jenkins_root/           # 系统级凭据
+│   ├── admin.enc
+│   └── db-password.enc
+├── test/                   # test 目录任务
+│   └── ssh-key.enc
+└── dev/team/               # dev/team 目录任务
+    └── api-token.enc
+```
+
+### ZIP 导出结构
+
+ZIP 包结构与外部存储一致：
+
+```
+jenkins-all-credentials-20260528-143000.zip
+├── jenkins_root/
+│   ├── admin.enc
+│   └── db-password.enc
+├── test/
+│   └── ssh-key.enc
+└── dev/team/
+    └── api-token.enc
+```
+
 ## 版本历史
 
 ### v1.0.1 (Latest)
 
-- **凭据类型全量支持**：新增 Secret file（文件凭据）和 Certificate（证书凭据）两种凭据类型的完整 CRUD 支持，现在支持所有 5 种 Jenkins 常用凭据类型：Secret Text、Username with Password、SSH Username with Private Key、Secret file、Certificate
+- **单凭据独立加密存储**：每个凭据单独保存为 `凭据id.enc` 文件，放在对应目录任务子目录下，便于单独管理和版本控制
+  - 存储结构：`storageDir/folderName/credentialId.enc`
+  - 系统级凭据：`storageDir/jenkins_root/credentialId.enc`
+
+- **ZIP 导出新格式**：全量导出时每个凭据单独一个 `.enc` 文件，ZIP 结构为 `jenkins_root/db-password.enc`、`test/ssh-key.enc`、`dev/team/api-token.enc`
+
+- **ZIP 导入新格式**：支持解析新的单凭据 `.enc` 文件格式，导入时可选择单个凭据进行恢复
+
+- **凭据类型全量支持**：支持所有 5 种 Jenkins 常用凭据类型：Secret Text、Username with Password、SSH Username with Private Key、Secret file、Certificate
 
 - **凭据选择导出/导入**：导出凭据弹窗支持选择要导出的凭据（默认不选择），导入凭据弹窗分为两步：先解析数据展示凭据列表（默认全选），再选择要导入的凭据
 
@@ -63,14 +103,6 @@ Jenkins 凭据管理插件 - 提供可视化的凭据管理界面，完全兼容
 - **权限上下文修复**：修复 ZIP 全量导入时线程池权限上下文丢失导致导入失败的问题，审计日志用户名从 `anonymous` 改为实际登录用户
 
 - **国际化 key 格式统一**：所有 i18n key 从空格分隔格式统一为 dot 格式（如 `export.all.zip`），提升可维护性
-
-- **审计日志弹窗优化**：最大保留天数配置和关闭按钮移到审计记录内容上方
-
-- **代码架构优化**：导入逻辑从 Action 层解耦到 `ImportService`，便于后期维护和扩展
-
-- **外部存储功能精简**：仅保留系统凭据管理下的外部存储功能，减少凭据扩散风险
-
-- **审计日志功能精简**：仅保留系统凭据管理下的审计日志功能，条目按时间倒序排列
 
 - **安全增强**：
   - 权限模型增强：解密、导出、同步等敏感操作升级为 `Jenkins.ADMINISTER` 权限

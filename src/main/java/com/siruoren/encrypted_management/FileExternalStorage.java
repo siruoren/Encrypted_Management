@@ -1,6 +1,7 @@
 package com.siruoren.encrypted_management;
 
 import jenkins.model.Jenkins;
+import net.sf.json.JSONArray;
 import net.sf.json.JSONObject;
 
 import java.io.*;
@@ -8,7 +9,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
@@ -17,8 +20,15 @@ import java.util.logging.Logger;
 /**
  * 基于文件的外部存储实现
  * 凭据存储在自定义目录下，与Jenkins Job配置完全解耦
- * 每个目录任务的所有凭据保存为一个加密文件，文件名为任务名.enc，系统级凭据使用jenkins_root.enc
+ * 每个凭据单独保存为一个加密文件，文件名为凭据ID.enc，放在对应目录任务子目录下
+ * 系统级凭据放在 jenkins_root/ 子目录下
  * 加密/解密由CryptoService统一提供
+ *
+ * 存储结构：
+ * - 系统级: storageDir/jenkins_root/credId.enc
+ * - 目录任务: storageDir/folderName/credId.enc
+ * 例如: storageDir/test/my-ssh-key.enc
+ *       storageDir/dev/team/db-password.enc
  *
  * 并发优化：
  * - 使用per-folder细粒度锁，避免全局锁阻塞
@@ -31,7 +41,6 @@ public class FileExternalStorage implements ExternalStorage {
     private volatile File storageDir;
     private volatile String encryptionPassword;
 
-    // per-folder细粒度锁，避免全局锁阻塞并发操作
     private final ConcurrentHashMap<String, ReentrantLock> folderLocks = new ConcurrentHashMap<>();
 
     public FileExternalStorage() {
@@ -67,30 +76,39 @@ public class FileExternalStorage implements ExternalStorage {
         return this.encryptionPassword;
     }
 
-    /**
-     * 获取文件夹级别的锁
-     */
     private ReentrantLock getFolderLock(String folderName) {
         return folderLocks.computeIfAbsent(folderName, k -> new ReentrantLock());
     }
 
     /**
-     * 根据文件夹名获取凭据文件
-     * 系统级凭据使用 jenkins_root.enc（存储根目录下）
-     * 目录任务使用目录全名作为子目录层级，文件名为任务名.enc
-     * 例如: folderName="test" → storageDir/test/test.enc
-     *       folderName="dev/team" → storageDir/dev/team/team.enc
+     * 获取文件夹对应的子目录
+     * 系统级: storageDir/jenkins_root/
+     * 目录任务: storageDir/folderName/
      */
-    private File getCredFile(String folderName) {
-        File currentStorageDir = storageDir; // 快照读取
+    private File getFolderDir(String folderName) {
+        File currentStorageDir = storageDir;
         if (folderName == null || folderName.isEmpty() || "system".equals(folderName)) {
-            return new File(currentStorageDir, "jenkins_root.enc");
+            return new File(currentStorageDir, "jenkins_root");
         }
-        // 所有目录任务都放在 fullName 路径的子目录下，文件名为任务名.enc
-        int lastSlash = folderName.lastIndexOf('/');
-        String taskName = lastSlash > 0 ? folderName.substring(lastSlash + 1) : folderName;
-        File subDir = new File(currentStorageDir, folderName);
-        return new File(subDir, taskName + ".enc");
+        return new File(currentStorageDir, folderName);
+    }
+
+    /**
+     * 获取单个凭据文件路径
+     * storageDir/folderName/credentialId.enc
+     */
+    private File getCredentialFile(String folderName, String credentialId) {
+        File folderDir = getFolderDir(folderName);
+        String safeFileName = sanitizeFileName(credentialId);
+        return new File(folderDir, safeFileName + ".enc");
+    }
+
+    /**
+     * 文件名安全处理：替换不合法的文件名字符
+     */
+    private String sanitizeFileName(String name) {
+        if (name == null || name.isEmpty()) return "unknown";
+        return name.replaceAll("[/\\\\:*?\"<>|]", "_");
     }
 
     @Override
@@ -104,66 +122,64 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     @Override
-    public void saveAllCredentials(String folderName, JSONObject allCredentialsData) throws IOException {
+    public void saveCredential(String folderName, String credentialId, JSONObject credentialData) throws IOException {
         ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
-            File currentStorageDir = storageDir; // 快照读取
+            File currentStorageDir = storageDir;
             if (!currentStorageDir.exists()) {
                 currentStorageDir.mkdirs();
             }
 
-            String dataToWrite;
-            String currentPassword = encryptionPassword; // 快照读取
+            String currentPassword = encryptionPassword;
             if (currentPassword == null || currentPassword.isEmpty()) {
                 throw new IOException("Encryption password is required for external storage");
             }
+
+            String dataToWrite;
             try {
-                dataToWrite = CryptoService.aesEncrypt(allCredentialsData.toString(), currentPassword);
+                dataToWrite = CryptoService.aesEncrypt(credentialData.toString(), currentPassword);
             } catch (Exception e) {
                 throw new IOException("Failed to encrypt credential data", e);
             }
 
-            // 写入临时文件后原子重命名，防止写入中断导致数据损坏
-            File credFile = getCredFile(folderName);
+            File credFile = getCredentialFile(folderName, credentialId);
             File parentDir = credFile.getParentFile();
             if (!parentDir.exists()) {
                 parentDir.mkdirs();
             }
+
             File tempFile = new File(parentDir, credFile.getName() + ".tmp");
             try (Writer writer = new OutputStreamWriter(new FileOutputStream(tempFile), StandardCharsets.UTF_8)) {
                 writer.write(dataToWrite);
             }
 
-            // 原子重命名
             if (!tempFile.renameTo(credFile)) {
-                // 部分文件系统不支持原子重命名，回退到直接写入
                 try (Writer writer = new OutputStreamWriter(new FileOutputStream(credFile), StandardCharsets.UTF_8)) {
                     writer.write(dataToWrite);
                 }
                 tempFile.delete();
             }
 
-            LOGGER.info("Saved credentials to external storage: " + credFile.getAbsolutePath()
-                    + (currentPassword != null ? " (encrypted)" : ""));
+            LOGGER.info("Saved credential to external storage: " + credFile.getAbsolutePath() + " (encrypted)");
         } finally {
             lock.unlock();
         }
     }
 
     @Override
-    public JSONObject loadAllCredentials(String folderName) throws IOException {
+    public JSONObject loadCredential(String folderName, String credentialId) throws IOException {
         ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
-            File credFile = getCredFile(folderName);
+            File credFile = getCredentialFile(folderName, credentialId);
             if (!credFile.exists()) {
                 return null;
             }
 
             String content = new String(Files.readAllBytes(credFile.toPath()), StandardCharsets.UTF_8);
 
-            String currentPassword = encryptionPassword; // 快照读取
+            String currentPassword = encryptionPassword;
             if (currentPassword == null || currentPassword.isEmpty()) {
                 throw new IOException("Encryption password is required for external storage");
             }
@@ -180,21 +196,119 @@ public class FileExternalStorage implements ExternalStorage {
     }
 
     @Override
-    public void deleteAllCredentials(String folderName) throws IOException {
+    public void deleteCredential(String folderName, String credentialId) throws IOException {
         ReentrantLock lock = getFolderLock(folderName);
         lock.lock();
         try {
-            File credFile = getCredFile(folderName);
+            File credFile = getCredentialFile(folderName, credentialId);
             if (credFile.exists()) {
                 if (!credFile.delete()) {
                     throw new IOException("Failed to delete credential file: " + credFile.getAbsolutePath());
                 }
-                // 删除空父目录（向上递归清理，直到存储根目录）
-                File parent = credFile.getParentFile();
-                File currentStorageDir = storageDir; // 快照读取
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public List<String> listCredentialIds(String folderName) throws IOException {
+        File folderDir = getFolderDir(folderName);
+        if (!folderDir.exists() || !folderDir.isDirectory()) {
+            return Collections.emptyList();
+        }
+
+        List<String> ids = new ArrayList<>();
+        File[] files = folderDir.listFiles((dir, name) -> name.endsWith(".enc"));
+        if (files == null) return ids;
+
+        for (File f : files) {
+            String fileName = f.getName();
+            ids.add(fileName.substring(0, fileName.length() - 4));
+        }
+        return ids;
+    }
+
+    @Override
+    @Deprecated
+    public void saveAllCredentials(String folderName, JSONObject allCredentialsData) throws IOException {
+        JSONArray credentials = allCredentialsData.optJSONArray("credentials");
+        if (credentials == null) return;
+
+        for (int i = 0; i < credentials.size(); i++) {
+            JSONObject credObj = credentials.getJSONObject(i);
+            String credId = credObj.optString("id", null);
+            if (credId == null || credId.isEmpty()) continue;
+
+            JSONObject singleCredData = new JSONObject();
+            singleCredData.put("version", allCredentialsData.optString("version", "1.0"));
+            singleCredData.put("folder", allCredentialsData.optString("folder", folderName));
+            singleCredData.put("exportTime", allCredentialsData.optString("exportTime", java.time.LocalDateTime.now().toString()));
+            singleCredData.put("credential", credObj);
+
+            saveCredential(folderName, credId, singleCredData);
+        }
+    }
+
+    @Override
+    @Deprecated
+    public JSONObject loadAllCredentials(String folderName) throws IOException {
+        List<String> credIds = listCredentialIds(folderName);
+        if (credIds.isEmpty()) return null;
+
+        JSONArray credentialsArray = new JSONArray();
+        for (String credId : credIds) {
+            try {
+                JSONObject singleData = loadCredential(folderName, credId);
+                if (singleData != null) {
+                    JSONObject credObj = singleData.optJSONObject("credential");
+                    if (credObj != null) {
+                        credentialsArray.add(credObj);
+                    }
+                }
+            } catch (IOException e) {
+                LOGGER.log(Level.WARNING, "Failed to load credential: " + credId, e);
+            }
+        }
+
+        if (credentialsArray.isEmpty()) return null;
+
+        JSONObject result = new JSONObject();
+        result.put("version", "1.0");
+        result.put("folder", folderName);
+        result.put("count", credentialsArray.size());
+        result.put("credentials", credentialsArray);
+        return result;
+    }
+
+    @Override
+    public void deleteAllCredentials(String folderName) throws IOException {
+        ReentrantLock lock = getFolderLock(folderName);
+        lock.lock();
+        try {
+            File folderDir = getFolderDir(folderName);
+            if (!folderDir.exists()) {
+                folderLocks.remove(folderName);
+                return;
+            }
+
+            File[] files = folderDir.listFiles((dir, name) -> name.endsWith(".enc"));
+            if (files != null) {
+                for (File f : files) {
+                    if (!f.delete()) {
+                        LOGGER.warning("Failed to delete credential file: " + f.getAbsolutePath());
+                    }
+                }
+            }
+
+            File[] remaining = folderDir.listFiles();
+            if (remaining == null || remaining.length == 0) {
+                folderDir.delete();
+                File currentStorageDir = storageDir;
+                File parent = folderDir.getParentFile();
                 while (parent != null && !parent.equals(currentStorageDir)) {
-                    File[] remaining = parent.listFiles();
-                    if (remaining == null || remaining.length == 0) {
+                    File[] parentRemaining = parent.listFiles();
+                    if (parentRemaining == null || parentRemaining.length == 0) {
                         parent.delete();
                         parent = parent.getParentFile();
                     } else {
@@ -202,7 +316,6 @@ public class FileExternalStorage implements ExternalStorage {
                     }
                 }
             }
-            // 清理锁映射，防止内存泄漏
             folderLocks.remove(folderName);
         } finally {
             lock.unlock();
@@ -211,49 +324,39 @@ public class FileExternalStorage implements ExternalStorage {
 
     @Override
     public List<String> listFolders() throws IOException {
-        File currentStorageDir = storageDir; // 快照读取
+        File currentStorageDir = storageDir;
         if (!currentStorageDir.exists() || !currentStorageDir.isDirectory()) {
             return Collections.emptyList();
         }
 
-        List<String> folders = new ArrayList<>();
-        // 检查系统级凭据
-        if (new File(currentStorageDir, "jenkins_root.enc").exists()) {
-            folders.add("system");
-        }
-        // 递归查找所有 .enc 文件
+        Set<String> folders = new HashSet<>();
         listFoldersRecursive(currentStorageDir, currentStorageDir, folders);
-        return folders;
+        return new ArrayList<>(folders);
     }
 
-    /**
-     * 递归查找所有 .enc 文件，计算相对路径作为 folderName
-     * 新路径格式: storageDir/test/test.enc → folderName="test"
-     *            storageDir/dev/team/team.enc → folderName="dev/team"
-     * 即 .enc 文件所在目录的相对路径就是 folderName
-     */
-    private void listFoldersRecursive(File baseDir, File currentDir, List<String> folders) {
+    private void listFoldersRecursive(File baseDir, File currentDir, Set<String> folders) {
         File[] children = currentDir.listFiles();
         if (children == null) return;
         for (File child : children) {
             if (child.isDirectory()) {
-                listFoldersRecursive(baseDir, child, folders);
-            } else if (child.getName().endsWith(".enc") && !"jenkins_root.enc".equals(child.getName())) {
-                // .enc 文件所在目录的相对路径就是 folderName
-                File parentDir = child.getParentFile();
-                String relativePath = baseDir.toPath().relativize(parentDir.toPath()).toString();
-                // 统一使用 / 作为分隔符
-                relativePath = relativePath.replace(File.separatorChar, '/');
-                if (!relativePath.isEmpty()) {
-                    folders.add(relativePath);
+                File[] encFiles = child.listFiles((dir, name) -> name.endsWith(".enc"));
+                if (encFiles != null && encFiles.length > 0) {
+                    String relativePath = baseDir.toPath().relativize(child.toPath()).toString();
+                    relativePath = relativePath.replace(File.separatorChar, '/');
+                    if ("jenkins_root".equals(relativePath)) {
+                        folders.add("system");
+                    } else if (!relativePath.isEmpty()) {
+                        folders.add(relativePath);
+                    }
                 }
+                listFoldersRecursive(baseDir, child, folders);
             }
         }
     }
 
     @Override
     public JSONObject getConfigInfo() {
-        File currentStorageDir = storageDir; // 快照读取
+        File currentStorageDir = storageDir;
         JSONObject info = new JSONObject();
         info.put("type", getType());
         info.put("path", currentStorageDir.getAbsolutePath());
@@ -261,5 +364,4 @@ public class FileExternalStorage implements ExternalStorage {
         info.put("encrypted", encryptionPassword != null && !encryptionPassword.isEmpty());
         return info;
     }
-
 }

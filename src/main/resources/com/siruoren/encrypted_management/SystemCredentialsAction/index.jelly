@@ -1765,7 +1765,7 @@
                         for (var i = 0; i < zipImportParsedData.length; i++) {
                             var c = zipImportParsedData[i];
                             html += '<div style="padding:4px 0; border-bottom:1px solid #eee;">';
-                            html += '<label><input type="checkbox" class="import-zip-cred-check" data-entry="' + c.folderEntry + '" data-index="' + c.index + '" checked="checked" onchange="updateImportZipSelectAll()"/> ';
+                            html += '<label><input type="checkbox" class="import-zip-cred-check" data-entry="' + c.folderEntry + '" checked="checked" onchange="updateImportZipSelectAll()"/> ';
                             if (c.folderName && c.folderName !== 'system') {
                                 html += '<span style="color:#4a6; font-size:0.85em;">[' + c.folderName + ']</span> ';
                             } else if (c.folderName === 'system') {
@@ -1805,7 +1805,7 @@
                         var checks = document.querySelectorAll('.import-zip-cred-check:checked');
                         var selectedEntries = [];
                         for (var i = 0; i < checks.length; i++) {
-                            selectedEntries.push(checks[i].getAttribute('data-entry') + ':' + checks[i].getAttribute('data-index'));
+                            selectedEntries.push(checks[i].getAttribute('data-entry'));
                         }
 
                         if (selectedEntries.length === 0) {

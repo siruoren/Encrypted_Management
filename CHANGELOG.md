@@ -2,7 +2,30 @@
 
 All notable changes to the Encrypted Management plugin will be documented in this file.
 
-## [1.0.1] - 2026-05-27
+## [1.0.1] - 2026-05-28
+
+### Added
+
+- **单凭据独立加密存储**：每个凭据单独保存为 `凭据id.enc` 文件，放在对应目录任务子目录下，便于单独管理和版本控制
+  - 存储结构：`storageDir/folderName/credentialId.enc`
+  - 系统级凭据：`storageDir/jenkins_root/credentialId.enc`
+- **ZIP 导出新格式**：全量导出时每个凭据单独一个 `.enc` 文件，ZIP 结构为 `jenkins_root/db-password.enc`、`test/ssh-key.enc`、`dev/team/api-token.enc`
+- **ZIP 导入新格式**：支持解析新的单凭据 `.enc` 文件格式，导入时可选择单个凭据进行恢复
+- **新的存储接口方法**：`ExternalStorage` 接口新增 `saveCredential`、`loadCredential`、`deleteCredential`、`listCredentialIds` 方法
+- **单凭据序列化**：`CredentialBackupService` 新增 `serializeCredential` 和 `buildSingleCredentialExportJson` 方法
+
+### Changed
+
+- **外部存储同步逻辑**：同步到外部存储时使用 `saveCredential` 逐个保存，而非批量保存
+- **ZIP 解析逻辑**：`doParseZipData` 改为解析新格式（每个 `.enc` 文件对应一个凭据）
+- **代码去重**：移除 `SystemCredentialsAction` 中重复的 `serializeCredential` 方法，统一使用 `CredentialBackupService.serializeCredential`
+- **旧格式兼容**：`saveAllCredentials` 和 `loadAllCredentials` 标记为 `@Deprecated`，但保持向后兼容
+
+### Tests
+
+- **单元测试更新**：`FileExternalStorageTest` 更新为 22 个测试用例，覆盖单凭据存储的所有操作
+
+## [1.0.0] - 2026-01-01
 
 ### Added
 
@@ -36,34 +59,22 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 - **导出时 ID HTML 转义问题**：修复导出凭据时对 `id`、`username` 等关键字段进行 HTML 转义导致导入时 ID 不匹配的问题
 - **单元测试更新**：更新 `CredentialBackupServiceTest` 使用公开 API（`encryptData`/`decryptData`），更新 `FileExternalStorageTest` 适配 `.enc` 加密文件格式和新的目录结构
 
-## [1.0.0] - 2026-01-01
-
-- **XSS 防护完善**：所有返回前端的用户可控字段（id、description、username 等）统一调用 `CredentialService.escapeHtml()` 进行转义
-
 ### Security
 
 - **权限模型增强**：解密、导出、同步等敏感操作升级为 `Jenkins.ADMINISTER` 权限，防止低权限用户获取明文凭据
-
 - **Zip Slip 漏洞修复**：对 ZIP 条目路径进行规范化检查，拒绝包含 `..` 或绝对路径的恶意条目
-
 - **密码安全管理**：外部存储密码从 `String` 改为 `char[]`，使用后及时用 `Arrays.fill()` 擦除，防止 Heap Dump 泄露
-
 - **加密密钥与 Jenkins master.key 绑定**：PBKDF2 密钥派生混入 Jenkins master.key，防止导出文件被离线暴力破解
-
 - **JSON Schema 验证**：新增凭据类型白名单、字段白名单和长度校验，防止反序列化攻击和数据污染
-
 - **审计日志脱敏**：credentialId 和 folder 使用 SHA-256 哈希摘要记录，避免泄露内部系统命名
-
 - **导入限流**：ZIP 文件大小限制 20MB，单次导入凭据数量限制 1000 条
-
 - **线程池生命周期管理**：使用 `@Terminator` 在 Jenkins 关闭时优雅关闭所有线程池，防止 ClassLoader 泄露
 
-## [1.0.1] - 2026-05-25
+## [0.9.0] - 2025-05-25
 
 ### Added
 
 - **目录任务凭据分层存储**：Jenkins 根目录下额外加密存储支持按目录层级保存凭据，以目录任务的 `fullName` 路径作为子目录结构，保持与 Jenkins 目录任务层级一致
-
 - **全量 ZIP 导入导出**：Jenkins 首页「系统凭证管理」支持导入导出所有目录任务的凭据并打包为 ZIP 包
   - ZIP 包结构与 Jenkins 目录任务路径保持一致
   - 导出时使用 AES-256-GCM 加密保护
@@ -74,7 +85,7 @@ All notable changes to the Encrypted Management plugin will be documented in thi
 
 - **文件夹凭据列表泄露系统级凭据**：修复目录任务下的凭证列表除了显示当前目录任务的凭据外，还错误地显示了 Jenkins 系统级凭据的问题。`CredentialsProvider.lookupCredentials()` 会递归返回父级凭据，现改为直接从文件夹自身的 `CredentialsStore` 获取凭据，确保只显示当前文件夹存储的凭据。影响范围：凭据列表、凭据查找、凭据导出、外部存储同步
 
-## [1.0.0] - 2025-05-25
+## [0.8.0] - 2025-01-01
 
 ### Added
 

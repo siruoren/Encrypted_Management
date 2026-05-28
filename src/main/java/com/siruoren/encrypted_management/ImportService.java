@@ -233,20 +233,127 @@ public class ImportService {
                 ? ((hudson.model.Item) itemGroup).getFullName() : "system";
 
         ExternalStorage storage = manager.getStorage();
-        JSONObject externalData = storage.loadAllCredentials(folderName);
-
-        if (externalData == null) {
+        List<String> credIds = storage.listCredentialIds(folderName);
+        if (credIds == null || credIds.isEmpty()) {
             throw new IOException("No credentials found in external storage for: " + folderName);
         }
 
-        ImportResult result = importFromJson(itemGroup, externalData, overwrite, null, null);
+        ImportResult result = new ImportResult(folderName);
+        for (String credId : credIds) {
+            try {
+                JSONObject singleData = storage.loadCredential(folderName, credId);
+                if (singleData == null) continue;
+
+                JSONObject credObj = singleData.optJSONObject("credential");
+                if (credObj == null) continue;
+
+                try {
+                    CredentialService.validateCredentialJson(credObj);
+                } catch (CredentialService.ValidationException ve) {
+                    result.record(ImportResult.Status.FAILED, credId, "", "UNKNOWN", ve.getMessage());
+                    continue;
+                }
+
+                String id = credObj.optString("id", null);
+                String description = credObj.optString("description", "");
+                String type = credObj.optString("type", "UNKNOWN");
+
+                CredentialsStore store = findStore(itemGroup);
+                if (store == null) {
+                    result.record(ImportResult.Status.FAILED, id, description, type, "No credentials store found");
+                    continue;
+                }
+
+                StandardCredentials existing = findCredentialById(itemGroup, id);
+                if (existing != null && !overwrite) {
+                    result.record(ImportResult.Status.SKIPPED, id, description, type, "Credential already exists");
+                    continue;
+                }
+
+                StandardCredentials newCred = CredentialBackupService.buildCredential(credObj, type, id, description);
+                if (existing != null) {
+                    store.updateCredentials(Domain.global(), existing, newCred);
+                    result.record(ImportResult.Status.UPDATED, id, description, type, "Overwritten existing credential");
+                } else {
+                    store.addCredentials(Domain.global(), newCred);
+                    result.record(ImportResult.Status.IMPORTED, id, description, type, "New credential created");
+                }
+            } catch (Exception e) {
+                result.record(ImportResult.Status.FAILED, credId, "", "UNKNOWN", e.getMessage());
+                LOGGER.log(Level.WARNING, "Failed to import credential from external: " + credId, e);
+            }
+        }
+
         AuditLogger.logImport(folderName, "imported from external: " + result.getSummaryMessage(), null);
         return result;
     }
 
+    /**
+     * 从ZIP包导入所有凭据（新格式：每个凭据单独一个.enc文件）
+     * 并发处理各ZIP条目
+     *
+     * @param zipBase64Data   ZIP的Base64编码数据
+     * @param password        解密密码
+     * @param overwrite       是否覆盖已存在
+     * @param selectedEntries 选中的条目集合（格式: "entryPath"），null表示全部
+     * @param auth            当前请求的Authentication
+     * @return ImportResult 合并后的导入结果
+     */
+    public static ImportResult importFromZipPerCredential(String zipBase64Data, String password,
+                                                          boolean overwrite, Set<String> selectedEntries,
+                                                          Authentication auth) throws Exception {
+        byte[] zipBytes = java.util.Base64.getDecoder().decode(zipBase64Data);
+
+        if (zipBytes.length > CredentialService.MAX_ZIP_SIZE_BYTES) {
+            throw new SecurityException("ZIP file exceeds maximum allowed size ("
+                    + CredentialService.MAX_ZIP_SIZE_BYTES / (1024 * 1024) + "MB)");
+        }
+
+        List<SingleCredEntryData> entries = parseSingleCredZipEntries(zipBytes, password);
+
+        if (entries.size() > CredentialService.MAX_ZIP_ENTRIES) {
+            throw new SecurityException("ZIP contains too many entries (max "
+                    + CredentialService.MAX_ZIP_ENTRIES + ")");
+        }
+
+        ImportResult mergedResult = new ImportResult("all");
+
+        ExecutorService executor = ThreadPoolManager.getInstance().getExecutor();
+        List<Future<ImportResult>> futures = new ArrayList<>();
+
+        final Authentication userAuth = auth != null ? auth : Jenkins.get().getAuthentication();
+        final String userName = userAuth.getName();
+
+        for (SingleCredEntryData entryData : entries) {
+            futures.add(executor.submit(new Callable<ImportResult>() {
+                @Override
+                public ImportResult call() throws Exception {
+                    try (ACLContext ctx = ACL.as(userAuth)) {
+                        return importSingleCredEntry(entryData, overwrite, selectedEntries, userName);
+                    }
+                }
+            }));
+        }
+
+        for (int i = 0; i < futures.size(); i++) {
+            try {
+                ImportResult entryResult = futures.get(i).get();
+                mergedResult.merge(entryResult);
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to get import result for ZIP entry: "
+                        + entries.get(i).entryPath, e);
+                mergedResult.record(ImportResult.Status.FAILED, null, null, null,
+                        "ZIP entry failed: " + entries.get(i).entryPath + " - " + e.getMessage());
+            }
+        }
+
+        AuditLogger.logImport("system", "ZIP import (per-credential): " + mergedResult.getSummaryMessage(), userName);
+        return mergedResult;
+    }
+
     // ==================== 内部方法 ====================
 
-    /** ZIP条目解析数据 */
+    /** ZIP条目解析数据（旧格式：一个条目包含多个凭据） */
     private static class ZipEntryData {
         String entryPath;
         String folderName;
@@ -261,7 +368,22 @@ public class ImportService {
         }
     }
 
-    /** 解析ZIP包中所有条目 */
+    /** ZIP条目解析数据（新格式：每个条目对应一个凭据） */
+    private static class SingleCredEntryData {
+        String entryPath;
+        String folderName;
+        ItemGroup<?> targetItemGroup;
+        JSONObject credObj;
+
+        SingleCredEntryData(String entryPath, String folderName, ItemGroup<?> targetItemGroup, JSONObject credObj) {
+            this.entryPath = entryPath;
+            this.folderName = folderName;
+            this.targetItemGroup = targetItemGroup;
+            this.credObj = credObj;
+        }
+    }
+
+    /** 解析ZIP包中所有条目（旧格式） */
     private static List<ZipEntryData> parseZipEntries(byte[] zipBytes, String password) throws Exception {
         List<ZipEntryData> entries = new ArrayList<>();
         ByteArrayInputStream bais = new ByteArrayInputStream(zipBytes);
@@ -307,10 +429,9 @@ public class ImportService {
         return entries;
     }
 
-    /** 导入单个ZIP条目 */
+    /** 导入单个ZIP条目（旧格式） */
     private static ImportResult importZipEntry(ZipEntryData entryData, boolean overwrite,
                                                Set<String> selectedEntries, String userName) throws Exception {
-        // 计算该条目中选中的凭据索引
         Set<Integer> selectedIndices = null;
         if (selectedEntries != null) {
             selectedIndices = new HashSet<>();
@@ -326,16 +447,150 @@ public class ImportService {
         return importFromJson(entryData.targetItemGroup, entryData.importObj, overwrite, selectedIndices, userName);
     }
 
-    /** 从ZIP条目路径提取folderName */
+    /** 解析ZIP包中所有条目（新格式：每个.enc文件对应一个凭据） */
+    private static List<SingleCredEntryData> parseSingleCredZipEntries(byte[] zipBytes, String password) throws Exception {
+        List<SingleCredEntryData> entries = new ArrayList<>();
+        ByteArrayInputStream bais = new ByteArrayInputStream(zipBytes);
+
+        try (ZipInputStream zis = new ZipInputStream(bais)) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                try {
+                    String entryName = entry.getName();
+                    if (entryName.contains("..") || entryName.startsWith("/") || entryName.startsWith("\\")) {
+                        LOGGER.warning("Skipping ZIP entry with suspicious path: " + entryName);
+                        zis.closeEntry();
+                        continue;
+                    }
+
+                    if (!entryName.endsWith(".enc")) {
+                        zis.closeEntry();
+                        continue;
+                    }
+
+                    ByteArrayOutputStream entryBaos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        entryBaos.write(buffer, 0, len);
+                    }
+                    String encryptedContent = entryBaos.toString(StandardCharsets.UTF_8.name());
+                    String decryptedJson = CredentialBackupService.decryptData(encryptedContent, password);
+                    JSONObject singleObj = JSONObject.fromObject(decryptedJson);
+
+                    JSONObject credObj = singleObj.optJSONObject("credential");
+                    if (credObj == null) {
+                        LOGGER.warning("No 'credential' key in ZIP entry: " + entryName);
+                        zis.closeEntry();
+                        continue;
+                    }
+
+                    String folderName = extractFolderNameFromEntry(entryName);
+                    ItemGroup<?> targetItemGroup = resolveTargetItemGroupFromEntry(entryName);
+
+                    if (targetItemGroup == null) {
+                        LOGGER.warning("Folder not found for ZIP entry: " + entryName + ", skipping");
+                        zis.closeEntry();
+                        continue;
+                    }
+
+                    entries.add(new SingleCredEntryData(entryName, folderName, targetItemGroup, credObj));
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to parse ZIP entry: " + entry.getName(), e);
+                }
+                zis.closeEntry();
+            }
+        }
+        return entries;
+    }
+
+    /** 导入单个凭据ZIP条目（新格式） */
+    private static ImportResult importSingleCredEntry(SingleCredEntryData entryData, boolean overwrite,
+                                                      Set<String> selectedEntries, String userName) throws Exception {
+        if (selectedEntries != null && !selectedEntries.contains(entryData.entryPath)) {
+            return new ImportResult(entryData.folderName);
+        }
+
+        JSONObject credObj = entryData.credObj;
+
+        try {
+            CredentialService.validateCredentialJson(credObj);
+        } catch (CredentialService.ValidationException ve) {
+            ImportResult result = new ImportResult(entryData.folderName);
+            result.record(ImportResult.Status.FAILED, credObj.optString("id", "unknown"), "", "UNKNOWN", ve.getMessage());
+            return result;
+        }
+
+        String id = credObj.optString("id", null);
+        String description = credObj.optString("description", "");
+        String type = credObj.optString("type", "UNKNOWN");
+
+        ImportResult result = new ImportResult(entryData.folderName);
+
+        try {
+            CredentialsStore store = findStore(entryData.targetItemGroup);
+            if (store == null) {
+                result.record(ImportResult.Status.FAILED, id, description, type, "No credentials store found");
+                return result;
+            }
+
+            StandardCredentials existing = findCredentialById(entryData.targetItemGroup, id);
+            if (existing != null && !overwrite) {
+                result.record(ImportResult.Status.SKIPPED, id, description, type, "Credential already exists");
+                return result;
+            }
+
+            StandardCredentials newCred = CredentialBackupService.buildCredential(credObj, type, id, description);
+            if (existing != null) {
+                store.updateCredentials(Domain.global(), existing, newCred);
+                result.record(ImportResult.Status.UPDATED, id, description, type, "Overwritten existing credential");
+            } else {
+                store.addCredentials(Domain.global(), newCred);
+                result.record(ImportResult.Status.IMPORTED, id, description, type, "New credential created");
+            }
+        } catch (Exception e) {
+            result.record(ImportResult.Status.FAILED, id, description, type, e.getMessage());
+            LOGGER.log(Level.WARNING, "Failed to import credential: " + id, e);
+        }
+
+        return result;
+    }
+
+    /** 从ZIP条目路径提取folderName（新格式：jenkins_root/cred-id.enc → system, folder/cred-id.enc → folder） */
+    static String extractFolderNameFromEntry(String entryName) {
+        if (entryName.startsWith("jenkins_root/")) {
+            return "system";
+        }
+        int lastSlash = entryName.lastIndexOf('/');
+        if (lastSlash > 0) {
+            return entryName.substring(0, lastSlash);
+        }
+        return "system";
+    }
+
+    /** 根据ZIP条目路径查找目标ItemGroup（新格式） */
+    private static ItemGroup<?> resolveTargetItemGroupFromEntry(String entryName) {
+        String folderFullName = extractFolderNameFromEntry(entryName);
+        if ("system".equals(folderFullName)) {
+            return Jenkins.get();
+        }
+        for (Folder folder : Jenkins.get().getAllItems(Folder.class)) {
+            if (folder.getFullName().equals(folderFullName)) {
+                return folder;
+            }
+        }
+        return null;
+    }
+
+    /** 从ZIP条目路径提取folderName（兼容新旧格式） */
     static String extractFolderName(String entryPath) {
-        if ("jenkins_root.enc".equals(entryPath)) {
+        if ("jenkins_root.enc".equals(entryPath) || entryPath.startsWith("jenkins_root/")) {
             return "system";
         }
         int lastSlash = entryPath.lastIndexOf('/');
         if (lastSlash > 0) {
             return entryPath.substring(0, lastSlash);
         }
-        // 兼容旧格式: test.enc → test
         String name = entryPath;
         if (name.endsWith(".enc")) {
             name = name.substring(0, name.length() - 4);
@@ -343,9 +598,9 @@ public class ImportService {
         return name;
     }
 
-    /** 根据ZIP条目路径查找目标ItemGroup */
+    /** 根据ZIP条目路径查找目标ItemGroup（兼容新旧格式） */
     private static ItemGroup<?> resolveTargetItemGroup(String entryPath) {
-        if ("jenkins_root.enc".equals(entryPath)) {
+        if ("jenkins_root.enc".equals(entryPath) || entryPath.startsWith("jenkins_root/")) {
             return Jenkins.get();
         }
         String folderFullName = extractFolderName(entryPath);
