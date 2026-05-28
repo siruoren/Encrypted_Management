@@ -350,6 +350,88 @@ public class CredentialBackupService {
     }
 
     /**
+     * 将单个凭据序列化为JSON对象
+     * 供ZIP导出和外部存储同步使用
+     */
+    public static JSONObject serializeCredential(StandardCredentials c) {
+        JSONObject credObj = new JSONObject();
+        credObj.put("id", c.getId());
+        credObj.put("description", c.getDescription());
+        credObj.put("scope", c.getScope().name());
+
+        if (c instanceof UsernamePasswordCredentials) {
+            UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
+            credObj.put("type", "USERNAME_PASSWORD");
+            credObj.put("username", upc.getUsername());
+            credObj.put("password", Secret.toString(upc.getPassword()));
+        } else if (c instanceof StringCredentials) {
+            StringCredentials sc = (StringCredentials) c;
+            credObj.put("type", "SECRET_TEXT");
+            credObj.put("secret", Secret.toString(sc.getSecret()));
+        } else if (c instanceof BasicSSHUserPrivateKey) {
+            BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
+            credObj.put("type", "SSH_KEY");
+            credObj.put("username", ssh.getUsername());
+            credObj.put("passphrase", Secret.toString(ssh.getPassphrase()));
+            credObj.put("privateKey", ssh.getPrivateKey());
+        } else if (c instanceof FileCredentials) {
+            FileCredentials fc = (FileCredentials) c;
+            credObj.put("type", "SECRET_FILE");
+            credObj.put("fileName", fc.getFileName());
+            try {
+                java.io.InputStream is = fc.getContent();
+                if (is != null) {
+                    byte[] fileBytes = is.readAllBytes();
+                    is.close();
+                    credObj.put("fileContent", java.util.Base64.getEncoder().encodeToString(fileBytes));
+                }
+            } catch (IOException e) {
+                LOGGER.log(Level.WARNING, "Failed to read file credential content: " + c.getId(), e);
+                return null;
+            }
+        } else if (c instanceof CertificateCredentials) {
+            CertificateCredentials cc = (CertificateCredentials) c;
+            credObj.put("type", "CERTIFICATE");
+            if (cc instanceof CertificateCredentialsImpl) {
+                CertificateCredentialsImpl cci = (CertificateCredentialsImpl) cc;
+                CertificateCredentialsImpl.KeyStoreSource ksSource = cci.getKeyStoreSource();
+                if (ksSource instanceof CertificateCredentialsImpl.UploadedKeyStoreSource) {
+                    SecretBytes uploadedKeystore = ((CertificateCredentialsImpl.UploadedKeyStoreSource) ksSource).getUploadedKeystore();
+                    if (uploadedKeystore != null) {
+                        credObj.put("keyStoreBytes", java.util.Base64.getEncoder().encodeToString(uploadedKeystore.getPlainData()));
+                    }
+                } else {
+                    byte[] ksBytes = ksSource.getKeyStoreBytes();
+                    if (ksBytes != null && ksBytes.length > 0) {
+                        credObj.put("keyStoreBytes", java.util.Base64.getEncoder().encodeToString(ksBytes));
+                    }
+                }
+            }
+            credObj.put("keyStorePassword", Secret.toString(cc.getPassword()));
+        } else {
+            return null;
+        }
+
+        return credObj;
+    }
+
+    /**
+     * 将单个凭据构建为单凭据导出JSON格式（用于ZIP条目和外部存储）
+     * 格式: {"version":"1.0","folder":"xxx","exportTime":"...","credential":{...}}
+     */
+    public static JSONObject buildSingleCredentialExportJson(StandardCredentials c, String folderName) {
+        JSONObject credObj = serializeCredential(c);
+        if (credObj == null) return null;
+
+        JSONObject exportObj = new JSONObject();
+        exportObj.put("version", BACKUP_VERSION);
+        exportObj.put("folder", folderName);
+        exportObj.put("exportTime", java.time.LocalDateTime.now().toString());
+        exportObj.put("credential", credObj);
+        return exportObj;
+    }
+
+    /**
      * AES-256-GCM加密（公开方法，供ZIP导出等场景使用）
      */
     public static String encryptData(String plaintext, String password) throws Exception {

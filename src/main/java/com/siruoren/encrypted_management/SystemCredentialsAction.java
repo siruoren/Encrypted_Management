@@ -890,28 +890,16 @@ public class SystemCredentialsAction implements RootAction {
                         String folderName = entry.getKey();
                         List<StandardCredentials> creds = entry.getValue();
 
-                        try {
-                            net.sf.json.JSONArray credentialsArray = new net.sf.json.JSONArray();
-                            for (StandardCredentials c : creds) {
-                                try {
-                                    JSONObject credData = serializeCredential(c);
-                                    credentialsArray.add(credData);
-                                } catch (Exception e) {
-                                    LOGGER.log(Level.WARNING, "Failed to serialize credential: " + c.getId(), e);
+                        for (StandardCredentials c : creds) {
+                            try {
+                                JSONObject singleData = CredentialBackupService.buildSingleCredentialExportJson(c, folderName);
+                                if (singleData != null) {
+                                    storage.saveCredential(folderName, c.getId(), singleData);
+                                    totalSynced++;
                                 }
+                            } catch (Exception e) {
+                                LOGGER.log(Level.WARNING, "Failed to sync credential: " + c.getId(), e);
                             }
-
-                            JSONObject allData = new JSONObject();
-                            allData.put("version", "1.0");
-                            allData.put("folder", folderName);
-                            allData.put("exportTime", java.time.LocalDateTime.now().toString());
-                            allData.put("count", credentialsArray.size());
-                            allData.put("credentials", credentialsArray);
-
-                            storage.saveAllCredentials(folderName, allData);
-                            totalSynced += credentialsArray.size();
-                        } catch (Exception e) {
-                            LOGGER.log(Level.WARNING, "Failed to sync credentials for folder: " + folderName, e);
                         }
                     }
 
@@ -932,8 +920,8 @@ public class SystemCredentialsAction implements RootAction {
 
     /**
      * API: 导出所有目录任务的凭据为加密ZIP包
-     * ZIP包结构与Jenkins目录任务路径保持一致
-     * 例如: dev/team.enc, jenkins_root.enc
+     * ZIP包结构：每个凭据单独保存为 凭据id.enc 文件，放在对应目录任务下
+     * 例如: jenkins_root/db-password.enc, test/ssh-key.enc, dev/team/api-token.enc
      */
     @RequirePOST
     public HttpResponse doExportAllAsZip(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -956,39 +944,31 @@ public class SystemCredentialsAction implements RootAction {
                     String folderName = entry.getKey();
                     List<StandardCredentials> creds = entry.getValue();
 
-                    net.sf.json.JSONArray credentialsArray = new net.sf.json.JSONArray();
+                    String zipFolderPrefix;
+                    if ("system".equals(folderName)) {
+                        zipFolderPrefix = "jenkins_root/";
+                    } else {
+                        zipFolderPrefix = folderName + "/";
+                    }
+
                     for (StandardCredentials c : creds) {
                         try {
-                            credentialsArray.add(serializeCredential(c));
+                            JSONObject singleData = CredentialBackupService.buildSingleCredentialExportJson(c, folderName);
+                            if (singleData == null) continue;
+
+                            String encryptedData = CredentialBackupService.encryptData(singleData.toString(), password);
+
+                            String safeId = c.getId().replaceAll("[/\\\\:*?\"<>|]", "_");
+                            String zipEntryName = zipFolderPrefix + safeId + ".enc";
+
+                            ZipEntry ze = new ZipEntry(zipEntryName);
+                            zos.putNextEntry(ze);
+                            zos.write(encryptedData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            zos.closeEntry();
                         } catch (Exception e) {
-                            LOGGER.log(Level.WARNING, "Failed to serialize credential: " + c.getId(), e);
+                            LOGGER.log(Level.WARNING, "Failed to export credential: " + c.getId(), e);
                         }
                     }
-
-                    JSONObject allData = new JSONObject();
-                    allData.put("version", "1.0");
-                    allData.put("folder", folderName);
-                    allData.put("exportTime", java.time.LocalDateTime.now().toString());
-                    allData.put("count", credentialsArray.size());
-                    allData.put("credentials", credentialsArray);
-
-                    // 加密凭据数据
-                    String encryptedData = CredentialBackupService.encryptData(allData.toString(), password);
-
-                    // ZIP内路径与额外存储路径一致：fullName/taskName.enc
-                    String zipEntryName;
-                    if ("system".equals(folderName)) {
-                        zipEntryName = "jenkins_root.enc";
-                    } else {
-                        int lastSlash = folderName.lastIndexOf('/');
-                        String taskName = lastSlash > 0 ? folderName.substring(lastSlash + 1) : folderName;
-                        zipEntryName = folderName + "/" + taskName + ".enc";
-                    }
-
-                    ZipEntry ze = new ZipEntry(zipEntryName);
-                    zos.putNextEntry(ze);
-                    zos.write(encryptedData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                    zos.closeEntry();
                 }
             }
 
@@ -1016,6 +996,7 @@ public class SystemCredentialsAction implements RootAction {
     /**
      * API: 解析加密ZIP包，返回所有凭据列表（不实际导入）
      * 用于导入前预览凭据列表，让用户选择要导入的凭据
+     * 新格式：每个ZIP条目对应一个凭据（凭据id.enc）
      */
     @RequirePOST
     public HttpResponse doParseZipData(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -1041,10 +1022,14 @@ public class SystemCredentialsAction implements RootAction {
                 ZipEntry entry;
                 while ((entry = zis.getNextEntry()) != null) {
                     try {
-                        // Zip Slip 防护：检查路径遍历攻击
                         String entryName = entry.getName();
                         if (entryName.contains("..") || entryName.startsWith("/") || entryName.startsWith("\\")) {
                             LOGGER.warning("Skipping ZIP entry with suspicious path: " + entryName);
+                            zis.closeEntry();
+                            continue;
+                        }
+
+                        if (!entryName.endsWith(".enc")) {
                             zis.closeEntry();
                             continue;
                         }
@@ -1058,44 +1043,36 @@ public class SystemCredentialsAction implements RootAction {
                         String encryptedContent = entryBaos.toString(java.nio.charset.StandardCharsets.UTF_8.name());
 
                         String decryptedJson = CredentialBackupService.decryptData(encryptedContent, password);
-                        JSONObject importObj = JSONObject.fromObject(decryptedJson);
+                        JSONObject singleObj = JSONObject.fromObject(decryptedJson);
 
-                        String entryPath = entry.getName();
                         String folderName;
-                        if ("jenkins_root.enc".equals(entryPath)) {
+                        if (entryName.startsWith("jenkins_root/")) {
                             folderName = "system";
                         } else {
-                            // 新路径格式: test/test.enc → folderName="test", dev/team/team.enc → folderName="dev/team"
-                            // .enc 文件所在目录的路径就是 folderName
-                            int lastSlash = entryPath.lastIndexOf('/');
+                            int lastSlash = entryName.lastIndexOf('/');
                             if (lastSlash > 0) {
-                                folderName = entryPath.substring(0, lastSlash);
+                                folderName = entryName.substring(0, lastSlash);
                             } else {
-                                // 兼容旧格式: test.enc → folderName="test"
-                                folderName = entryPath;
+                                folderName = entryName;
                                 if (folderName.endsWith(".enc")) {
                                     folderName = folderName.substring(0, folderName.length() - 4);
                                 }
                             }
                         }
 
-                        net.sf.json.JSONArray credentials = importObj.optJSONArray("credentials");
-                        if (credentials != null) {
-                            for (int i = 0; i < credentials.size(); i++) {
-                                JSONObject cred = credentials.getJSONObject(i);
-                                JSONObject preview = new JSONObject();
-                                preview.put("folderEntry", entryPath);
-                                preview.put("folderName", CredentialService.escapeHtml(folderName));
-                                preview.put("index", i);
-                                preview.put("id", CredentialService.escapeHtml(cred.optString("id", "")));
-                                preview.put("description", CredentialService.escapeHtml(cred.optString("description", "")));
-                                preview.put("type", cred.optString("type", ""));
-                                preview.put("scope", cred.optString("scope", ""));
-                                if (cred.has("username")) {
-                                    preview.put("username", CredentialService.escapeHtml(cred.getString("username")));
-                                }
-                                allPreview.add(preview);
+                        JSONObject credObj = singleObj.optJSONObject("credential");
+                        if (credObj != null) {
+                            JSONObject preview = new JSONObject();
+                            preview.put("folderEntry", entryName);
+                            preview.put("folderName", CredentialService.escapeHtml(folderName));
+                            preview.put("id", CredentialService.escapeHtml(credObj.optString("id", "")));
+                            preview.put("description", CredentialService.escapeHtml(credObj.optString("description", "")));
+                            preview.put("type", credObj.optString("type", ""));
+                            preview.put("scope", credObj.optString("scope", ""));
+                            if (credObj.has("username")) {
+                                preview.put("username", CredentialService.escapeHtml(credObj.getString("username")));
                             }
+                            allPreview.add(preview);
                         }
                     } catch (Exception e) {
                         LOGGER.log(Level.WARNING, "Failed to parse ZIP entry: " + entry.getName(), e);
@@ -1120,6 +1097,7 @@ public class SystemCredentialsAction implements RootAction {
 
     /**
      * API: 从加密ZIP包导入所有目录任务的凭据（并发导入）
+     * 新格式：每个ZIP条目对应一个凭据（凭据id.enc）
      */
     @RequirePOST
     public HttpResponse doImportAllFromZip(StaplerRequest req, StaplerResponse rsp) throws IOException {
@@ -1141,7 +1119,8 @@ public class SystemCredentialsAction implements RootAction {
         java.util.Set<String> selectedEntries = ImportService.parseSelectedEntries(selectedEntriesParam);
 
         try {
-            ImportResult importResult = ImportService.importFromZip(encryptedZipData, password, overwrite, selectedEntries, Jenkins.get().getAuthentication());
+            ImportResult importResult = ImportService.importFromZipPerCredential(
+                    encryptedZipData, password, overwrite, selectedEntries, Jenkins.get().getAuthentication());
 
             JSONObject result = new JSONObject();
             result.put("success", true);
@@ -1205,66 +1184,6 @@ public class SystemCredentialsAction implements RootAction {
             }
         }
         return creds;
-    }
-
-    /**
-     * 序列化凭据为JSON对象
-     */
-    private JSONObject serializeCredential(StandardCredentials c) {
-        JSONObject credData = new JSONObject();
-        credData.put("id", c.getId());
-        credData.put("description", c.getDescription());
-        credData.put("scope", c.getScope().name());
-        credData.put("type", CredentialService.getCredentialsTypeKey(c));
-
-        if (c instanceof UsernamePasswordCredentials) {
-            UsernamePasswordCredentials upc = (UsernamePasswordCredentials) c;
-            credData.put("username", upc.getUsername());
-            credData.put("password", Secret.toString(upc.getPassword()));
-        } else if (c instanceof StringCredentials) {
-            credData.put("secret", Secret.toString(((StringCredentials) c).getSecret()));
-        } else if (c instanceof BasicSSHUserPrivateKey) {
-            BasicSSHUserPrivateKey ssh = (BasicSSHUserPrivateKey) c;
-            credData.put("username", ssh.getUsername());
-            credData.put("passphrase", Secret.toString(ssh.getPassphrase()));
-            credData.put("privateKey", ssh.getPrivateKey());
-        } else if (c instanceof org.jenkinsci.plugins.plaincredentials.FileCredentials) {
-            org.jenkinsci.plugins.plaincredentials.FileCredentials fc =
-                    (org.jenkinsci.plugins.plaincredentials.FileCredentials) c;
-            credData.put("fileName", fc.getFileName());
-            try {
-                java.io.InputStream is = fc.getContent();
-                if (is != null) {
-                    byte[] fileBytes = is.readAllBytes();
-                    is.close();
-                    credData.put("fileContent", java.util.Base64.getEncoder().encodeToString(fileBytes));
-                }
-            } catch (IOException e) {
-                LOGGER.log(Level.WARNING, "Failed to read file credential content: " + c.getId(), e);
-            }
-        } else if (c instanceof com.cloudbees.plugins.credentials.common.CertificateCredentials) {
-            com.cloudbees.plugins.credentials.common.CertificateCredentials cc =
-                    (com.cloudbees.plugins.credentials.common.CertificateCredentials) c;
-            if (cc instanceof com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl) {
-                com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl cci =
-                        (com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl) cc;
-                com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.KeyStoreSource ksSource = cci.getKeyStoreSource();
-                if (ksSource instanceof com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource) {
-                    com.cloudbees.plugins.credentials.SecretBytes uploadedKeystore =
-                            ((com.cloudbees.plugins.credentials.impl.CertificateCredentialsImpl.UploadedKeyStoreSource) ksSource).getUploadedKeystore();
-                    if (uploadedKeystore != null) {
-                        credData.put("keyStoreBytes", java.util.Base64.getEncoder().encodeToString(uploadedKeystore.getPlainData()));
-                    }
-                } else {
-                    byte[] ksBytes = ksSource.getKeyStoreBytes();
-                    if (ksBytes != null && ksBytes.length > 0) {
-                        credData.put("keyStoreBytes", java.util.Base64.getEncoder().encodeToString(ksBytes));
-                    }
-                }
-            }
-            credData.put("keyStorePassword", Secret.toString(cc.getPassword()));
-        }
-        return credData;
     }
 
     private HttpResponse jsonResult(JSONObject json) {
