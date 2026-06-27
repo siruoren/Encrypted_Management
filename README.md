@@ -147,4 +147,4 @@ jenkins-all-credentials-20260528-143000.zip
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/chart?repos=siruoren/encrypted_managaement&type=date&legend=top-left)](https://www.star-history.com/?repos=siruoren%2Fencrypted_managaement&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/chart?repos=devpassops/JksEncManagement&type=date&legend=top-left)](https://www.star-history.com/?repos=devpassops%2FJksEncManagement&type=date&legend=top-left)
